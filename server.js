@@ -183,8 +183,10 @@ const server = http.createServer(async (req, res) => {
       if (!/^https:\/\/www\.uci-kinowelt\.de\/[^"'<>]+\.(jpg|jpeg|png|webp)$/i.test(u)) {
         res.writeHead(400); res.end('bad url'); return;
       }
-      const ir = await fetch(u, { headers: { 'User-Agent': 'Mozilla/5.0', Referer: BASE + '/' } });
-      if (!ir.ok) { res.writeHead(ir.status); res.end(); return; }
+      const ih = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36', Referer: BASE + '/', Accept: 'image/avif,image/webp,image/*,*/*;q=0.8' };
+      let ir, last = 0;
+      for (let i = 0; i < 3; i++) { ir = await fetch(u, { headers: ih }); if (ir.ok) break; last = ir.status; await new Promise(r => setTimeout(r, 250 * (i + 1))); }
+      if (!ir.ok) { res.writeHead(last || 502); res.end(); return; }
       const buf = Buffer.from(await ir.arrayBuffer());
       res.writeHead(200, { 'Content-Type': ir.headers.get('content-type') || 'image/jpeg', 'Cache-Control': 'public, max-age=86400' });
       res.end(buf);

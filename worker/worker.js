@@ -192,25 +192,31 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/+$/, '') || '/';
 
-    // Poster-Proxy
+    // Poster-Proxy – Retry + nur erfolgreiche Bilder cachen (kein 403-Caching)
     if (path === '/img') {
       const u = url.searchParams.get('u') || '';
       if (!/^https:\/\/www\.uci-kinowelt\.de\/[^"'<>\s]+\.(jpg|jpeg|png|webp)$/i.test(u)) {
         return new Response('bad url', { status: 400, headers: cors() });
       }
-      const ir = await fetch(u, {
-        headers: { 'User-Agent': UA, Referer: BASE + '/' },
-        cf: { cacheTtl: 86400, cacheEverything: true },
-      });
-      if (!ir.ok) return new Response(null, { status: ir.status, headers: cors() });
-      return new Response(ir.body, {
+      const cache = caches.default;
+      const key = new Request('https://uci.cache/img?u=' + encodeURIComponent(u));
+      const hit = await cache.match(key);
+      if (hit) return withCors(hit);
+      const imgHeaders = { 'User-Agent': UA, Referer: BASE + '/', Accept: 'image/avif,image/webp,image/*,*/*;q=0.8' };
+      let ir, last = 0;
+      for (let i = 0; i < 3; i++) {
+        ir = await fetch(u, { headers: imgHeaders });
+        if (ir.ok) break;
+        last = ir.status;
+        await new Promise(r => setTimeout(r, 250 * (i + 1)));
+      }
+      if (!ir.ok) return new Response(null, { status: last || 502, headers: cors() });
+      const resp = new Response(ir.body, {
         status: 200,
-        headers: {
-          ...cors(),
-          'Content-Type': ir.headers.get('content-type') || 'image/jpeg',
-          'Cache-Control': 'public, max-age=86400',
-        },
+        headers: { 'Content-Type': ir.headers.get('content-type') || 'image/jpeg', 'Cache-Control': 'public, max-age=86400' },
       });
+      ctx.waitUntil(cache.put(key, resp.clone()));
+      return withCors(resp);
     }
 
     // Programm – mit Edge-Cache (10 Min) + Stale-Fallback (12 h), falls UCI blockt
