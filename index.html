@@ -82,11 +82,28 @@
   .row .tm{font-size:13px;color:var(--dim);margin-top:1px}
   .row .add{font-size:22px;color:var(--accent);font-weight:400;line-height:1}
   .plan{background:var(--surface);border-radius:14px;padding:16px;position:sticky;top:96px;box-shadow:var(--shadow)}
-  .plan .item{display:flex;gap:12px;padding:10px;margin-bottom:10px;background:var(--surface-2);border-radius:10px;position:relative}
+  .plan .item{display:flex;gap:12px;padding:10px;margin-bottom:10px;background:var(--surface-2);border:1px solid transparent;border-radius:10px;position:relative}
+  .plan .item.suggested{border:1px dashed rgba(245,166,35,.32);background:rgba(245,166,35,.05)}
   .item-poster{width:46px;height:69px;object-fit:cover;border-radius:6px;background:var(--surface);flex:0 0 auto}
-  .plan .item .info{min-width:0;flex:1;padding-right:16px}
-  .plan .item .x{position:absolute;top:9px;right:11px;color:var(--dim2);cursor:pointer;font-weight:700;font-size:13px;transition:.13s}
-  .plan .item .x:hover{color:var(--danger)}
+  .plan .item .info{min-width:0;flex:1;padding-right:46px}
+  .item-ctrls{position:absolute;top:9px;right:11px;display:flex;gap:11px}
+  .item-ctrls .ic{color:var(--dim2);cursor:pointer;font-weight:700;font-size:15px;line-height:1;transition:.13s}
+  .item-ctrls .ic:hover{color:var(--accent)}
+  .item-ctrls .ic.x:hover{color:var(--danger)}
+  .sugg{font-size:9.5px;font-weight:700;color:var(--accent);border:1px dashed rgba(245,166,35,.5);border-radius:4px;padding:0 5px;margin-left:6px;vertical-align:middle;letter-spacing:.04em;text-transform:uppercase}
+  /* Tausch-Auswahl & "danach noch" */
+  .chooser,.nextbox{background:var(--bg);border-radius:10px;padding:6px;margin:-4px 0 10px}
+  .nextbox{margin:12px 0 4px}
+  .chooser-h,.nexth{font-size:10.5px;color:var(--dim2);text-transform:uppercase;letter-spacing:.07em;font-weight:600;padding:5px 7px 6px}
+  .crow{display:flex;align-items:center;gap:10px;padding:6px 7px;border-radius:8px;cursor:pointer;transition:.12s}
+  .crow:hover{background:var(--surface-2)}
+  .crow-poster{width:30px;height:45px;object-fit:cover;border-radius:4px;background:var(--surface-2);flex:0 0 auto}
+  .crow .cl{min-width:0;flex:1}
+  .crow .ct{font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .crow .cs{font-size:12px;color:var(--dim)}
+  .crow .cadd{color:var(--accent);font-weight:700;font-size:18px;padding-right:4px}
+  .cempty,.nextnote{font-size:12px;color:var(--dim2);padding:6px 8px}
+  .nextnote{margin-top:8px}
   .gap{font-size:12px;color:var(--dim2);text-align:center;margin:3px 0}
   .empty{color:var(--dim);font-size:14px;text-align:center;padding:26px 14px;line-height:1.6}
   .total{margin-top:14px;padding-top:14px;border-top:1px solid var(--hair);font-size:14px}
@@ -155,7 +172,7 @@
   <div id="progView"></div>
 
   <div id="planView" style="display:none">
-    <div class="hint">Wähle einen Startfilm links – der Planer hängt automatisch alle Filme an, die du danach ohne Kollision noch schaffst (inkl. Endzeit + Pausen). Du kannst Vorstellungen auch manuell anklicken.</div>
+    <div class="hint">Wähle links einen <b>Startfilm</b>. Dann tippe unten unter „Das schaffst du danach noch" passende Filme an – oder lass dir mit <b>⚡ Auto-Vorschlag</b> eine komplette Kette vorschlagen. Jeden Film kannst du mit <b>⇄</b> tauschen oder mit ✕ entfernen.</div>
     <div class="planner">
       <div class="col">
         <h2>Vorstellungen am Tag</h2>
@@ -172,7 +189,7 @@
 <div id="modal" class="modal" style="display:none"><div class="sheet" id="sheet"></div></div>
 
 <script>
-const S = { data:null, day:null, tab:'prog', plan:[] };
+const S = { data:null, day:null, tab:'prog', plan:[], swapOpen:null };
 
 // Datenquelle: lokal (localhost) der Node-Server (gleiche Herkunft),
 // produktiv der Cloudflare Worker aus config.js.
@@ -288,18 +305,16 @@ function planConflict(it){
   return toMin(it.show.time) < le + gapMin();
 }
 
+function planItem(it,suggested){ return {film:it.film, show:it.show, suggested:!!suggested}; }
+
+// Fügt einen Film hinzu (Start oder nächster) – als bewusste Wahl, KEIN Auto-Einfügen.
 function pickStart(perf){
   const it=findByPerf(perf); if(!it) return;
-  if(S.plan.length===0){
-    S.plan=[it];
-    autoExtend();
-  }else{
-    if(planConflict(it)) return;
-    S.plan.push(it);
-  }
-  render();
+  if(S.plan.length===0){ S.plan=[planItem(it,false)]; }
+  else { if(planConflict(it)) return; S.plan.push(planItem(it,false)); }
+  S.swapOpen=null; render();
 }
-// hängt greedy die frühestmöglichen Folgefilme an
+// Optionaler Auto-Vorschlag: hängt greedy passende Folgefilme an, als "Vorschlag" markiert.
 function autoExtend(){
   const all=showsForDay();
   let guard=0;
@@ -312,12 +327,58 @@ function autoExtend(){
       .filter(it=>!usedFilms.has(it.film) && endOf(it.film,it.show)!=null && toMin(it.show.time)>=le+gapMin())
       .sort((a,b)=>toMin(a.show.time)-toMin(b.show.time))[0];
     if(!next) break;
-    S.plan.push(next);
+    S.plan.push(planItem(next,true));
   }
 }
-function removeAt(i){ S.plan.splice(i); render(); }
-function clearPlan(){ S.plan=[]; render(); }
+function autoSuggest(){ autoExtend(); S.swapOpen=null; render(); }
 
+// Filme, die nach dem letzten Plan-Film noch zeitlich passen (für "Das schaffst du danach noch").
+function nextCandidates(){
+  if(!S.plan.length) return [];
+  const last=S.plan[S.plan.length-1];
+  const le=endOf(last.film,last.show);
+  if(le==null) return [];
+  const used=new Set(S.plan.map(p=>p.film));
+  return showsForDay()
+    .filter(it=>!used.has(it.film) && endOf(it.film,it.show)!=null && toMin(it.show.time)>=le+gapMin())
+    .sort((a,b)=>toMin(a.show.time)-toMin(b.show.time));
+}
+// Alternativen für Slot i (passt nach dem vorherigen Film; anderer Film als der aktuelle).
+function slotCandidates(i){
+  const prevEnd = i>0 ? endOf(S.plan[i-1].film,S.plan[i-1].show) : null;
+  const usedOther=new Set(S.plan.filter((_,j)=>j!==i).map(p=>p.film));
+  const curFilm=S.plan[i].film;
+  return showsForDay().filter(it=>{
+    if(it.film===curFilm) return false;       // denselben Film nicht als Tausch anbieten
+    if(usedOther.has(it.film)) return false;
+    if(endOf(it.film,it.show)==null) return false;
+    if(prevEnd!=null && toMin(it.show.time) < prevEnd+gapMin()) return false;
+    return true;
+  }).sort((a,b)=>toMin(a.show.time)-toMin(b.show.time));
+}
+function swapAt(i){ S.swapOpen = (S.swapOpen===i ? null : i); render(); }
+function doSwap(i,perf){
+  const it=findByPerf(perf); if(!it) return;
+  S.plan[i]=planItem(it,false);
+  // Tail neu prüfen: ab erstem Film, der nicht mehr passt, abschneiden
+  for(let j=i+1;j<S.plan.length;j++){
+    const pe=endOf(S.plan[j-1].film,S.plan[j-1].show);
+    if(pe==null || toMin(S.plan[j].show.time) < pe+gapMin()){ S.plan.splice(j); break; }
+  }
+  S.swapOpen=null; render();
+}
+function removeAt(i){ S.plan.splice(i,1); S.swapOpen=null; render(); }
+function clearPlan(){ S.plan=[]; S.swapOpen=null; render(); }
+
+// Kompakte Kandidaten-Zeile (für Tausch-Auswahl und "danach noch")
+function candRow(it,onclick,add){
+  const e=endOf(it.film,it.show);
+  return `<div class="crow" onclick="${onclick}">
+    ${it.film.poster?`<img class="crow-poster" src="${imgUrl(it.film.poster)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`:'<div class="crow-poster"></div>'}
+    <div class="cl"><div class="ct">${esc(it.film.title)}</div><div class="cs">${it.show.time}${e!=null?' → '+toHM(e):''}${it.show.versions.length?' · '+it.show.versions.join(' '):''}</div></div>
+    ${add?'<div class="cadd">+</div>':''}
+  </div>`;
+}
 function renderPlan(){
   if(S.plan.length===0){ $('#plan').innerHTML='<div class="empty">Noch kein Film gewählt.<br>Klicke links auf einen Startfilm.</div>'; return; }
   let html=''; let prevEnd=null; let firstStart=null; let lastEnd=null; let totalRun=0;
@@ -325,17 +386,35 @@ function renderPlan(){
     const st=toMin(p.show.time), e=endOf(p.film,p.show);
     if(firstStart==null) firstStart=st;
     if(prevEnd!=null){ const w=st-prevEnd; html+=`<div class="gap">↓ ${w} min Pause</div>`; }
-    html+=`<div class="item">
-      <span class="x" onclick="removeAt(${i})">✕</span>
+    html+=`<div class="item${p.suggested?' suggested':''}">
+      <div class="item-ctrls">
+        <span class="ic" title="Film tauschen" onclick="swapAt(${i})">⇄</span>
+        <span class="ic x" title="Entfernen" onclick="removeAt(${i})">✕</span>
+      </div>
       ${p.film.poster?`<img class="item-poster" src="${imgUrl(p.film.poster)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`:'<div class="item-poster"></div>'}
       <div class="info">
-        <div><b>${p.show.time}${e!=null?' – '+toHM(e):''}</b> ${p.show.versions.length?'<span class="badge">'+p.show.versions.join(' ')+'</span>':''}</div>
+        <div><b>${p.show.time}${e!=null?' – '+toHM(e):''}</b> ${p.show.versions.length?'<span class="badge">'+p.show.versions.join(' ')+'</span>':''}${p.suggested?'<span class="sugg">Vorschlag</span>':''}</div>
         <div style="font-size:14px;font-weight:600;margin:2px 0 1px">${esc(p.film.title)}</div>
         <div style="font-size:12px;color:var(--dim)">${p.film.runtime!=null?p.film.runtime+' min + '+buffer()+' min Werbung':'Länge unbekannt'}</div>
       </div>
     </div>`;
+    if(S.swapOpen===i){
+      const cands=slotCandidates(i);
+      html+=`<div class="chooser"><div class="chooser-h">Film für diesen Slot tauschen</div>${
+        cands.length ? cands.map(it=>candRow(it,`doSwap(${i},'${it.show.perf}')`,false)).join('')
+                     : '<div class="cempty">Keine passende Alternative für diesen Slot.</div>'
+      }</div>`;
+    }
     if(e!=null){ prevEnd=e; lastEnd=e; totalRun+=p.film.runtime; }
   });
+  // Das schaffst du danach noch
+  const nexts=nextCandidates();
+  const lastKnown=endOf(S.plan[S.plan.length-1].film,S.plan[S.plan.length-1].show)!=null;
+  if(nexts.length){
+    html+=`<div class="nextbox"><div class="nexth">Das schaffst du danach noch</div>${nexts.slice(0,8).map(it=>candRow(it,`pickStart('${it.show.perf}')`,true)).join('')}</div>`;
+  } else if(lastKnown){
+    html+=`<div class="nextnote">Danach passt kein weiterer Film mehr rein.</div>`;
+  }
   const span = (firstStart!=null&&lastEnd!=null)? lastEnd-firstStart : null;
   html+=`<div class="total">
     <div><b>${S.plan.length}</b> Filme · Kino von <b>${toHM(firstStart)}</b>${lastEnd!=null?' bis <b>'+toHM(lastEnd)+'</b>':''}</div>
@@ -343,7 +422,7 @@ function renderPlan(){
     <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
       <button class="primary big" onclick="openSummary()">🎟 Fertig – Tickets holen</button>
       <div style="display:flex;gap:8px">
-        <button style="flex:1" onclick="autoExtend();render()">⏩ Auto-verlängern</button>
+        <button style="flex:1" onclick="autoSuggest()">⚡ Auto-Vorschlag</button>
         <button style="flex:1" onclick="clearPlan()">Leeren</button>
       </div>
     </div>
@@ -501,7 +580,7 @@ $('#buffer').oninput=render;
 $('#gap').oninput=render;
 $('#refresh').onclick=()=>load(true);
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{S.tab=b.dataset.tab;render();});
-window.pickStart=pickStart; window.removeAt=removeAt; window.clearPlan=clearPlan; window.autoExtend=autoExtend; window.render=render;
+window.pickStart=pickStart; window.removeAt=removeAt; window.clearPlan=clearPlan; window.autoSuggest=autoSuggest; window.swapAt=swapAt; window.doSwap=doSwap; window.render=render;
 window.openSummary=openSummary; window.closeSummary=closeSummary; window.sharePlan=sharePlan; window.copyList=copyList; window.copyLink=copyLink;
 $('#modal').onclick=e=>{ if(e.target.id==='modal') closeSummary(); };
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeSummary(); });
