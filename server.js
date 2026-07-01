@@ -115,8 +115,8 @@ async function getProgram(force = false) {
   return cache;
 }
 
-// --- Mini-Webserver ---
-const PUBLIC = path.join(__dirname, 'public');
+// --- Mini-Webserver (lokale Entwicklung; produktiv übernimmt der Cloudflare Worker) ---
+const PUBLIC = __dirname;
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
 
 const server = http.createServer(async (req, res) => {
@@ -135,7 +135,7 @@ const server = http.createServer(async (req, res) => {
       res.end(buf);
       return;
     }
-    if (url.pathname === '/api/program') {
+    if (url.pathname === '/program' || url.pathname === '/api/program') {
       const force = url.searchParams.get('refresh') === '1';
       const c = await getProgram(force);
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });

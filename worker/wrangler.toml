@@ -1,0 +1,6 @@
+name = "uci-proxy"
+main = "worker.js"
+compatibility_date = "2024-09-01"
+
+# Nach dem Deploy erreichbar unter:
+#   https://uci-proxy.<dein-subdomain>.workers.dev

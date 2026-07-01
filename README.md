@@ -4,16 +4,44 @@
 **berechneten Endzeiten** und einem **Marathon-Planer** für mehrere Filme am Stück
 (gedacht für die Ultimate-Karte).
 
-## Starten
+## Architektur
+
+Gleiches Muster wie *vrr-abfahrtsmonitor*: **statisches Frontend + Cloudflare Worker**.
 
 ```
-cd uci-ruhrpark
+index.html + config.js   ← reines Frontend (Vanilla JS), läuft auf GitHub Pages / Cloudflare
+        │
+        │  fetch  /program , /img
+        ▼
+worker/worker.js         ← Cloudflare Worker: holt & parst das UCI-Programm, proxied Poster,
+                           setzt CORS-Header (UCI selbst blockt Browser-Fetches + Hotlinking)
+
+server.js                ← nur für LOKALE Entwicklung (Node), ersetzt den Worker auf localhost
+```
+
+Das Frontend erkennt automatisch: auf **localhost** spricht es `server.js` an, sonst den
+**Worker** aus `config.js`.
+
+## Produktiv nutzen (GitHub Pages / Cloudflare)
+
+1. **Worker deployen** – Anleitung in [`worker/README.md`](worker/README.md).
+   Ergibt eine URL wie `https://uci-proxy.deinname.workers.dev`.
+2. Diese URL in **`config.js`** eintragen:
+   ```js
+   window.UCI_WORKER_BASE = "https://uci-proxy.deinname.workers.dev";
+   ```
+3. Committen & pushen. Pages/Cloudflare liefert `index.html` aus, die Daten kommen vom Worker.
+
+Privates Repo + Hosting über Cloudflare ist kostenlos – der „GitHub Pro"-Hinweis gilt nur
+für reines GitHub Pages aus privaten Repos.
+
+## Lokal entwickeln / testen
+
+```
 node server.js
 ```
-
-Dann im Browser öffnen: **http://localhost:8787**
-
-Läuft ohne jede Installation (nur Node ≥ 18 nötig, keine npm-Pakete).
+→ **http://localhost:8787** (nur Node ≥ 18 nötig, keine npm-Pakete). `config.js` wird
+lokal ignoriert.
 
 ## Was es kann
 
@@ -26,16 +54,7 @@ Läuft ohne jede Installation (nur Node ≥ 18 nötig, keine npm-Pakete).
   die du danach ohne Kollision noch schaffst (inkl. Saalwechsel-Pause, Standard 15 Min).
   Zeigt Gesamtdauer, Pausen und Endzeit über Mitternacht hinaus.
 - **Tagauswahl** (mehrere Wochen im Voraus) und **Versionsfilter**.
-- **↻ Aktualisieren** holt frische Daten (sonst 10 Min gecacht).
-
-## Wie es an die Daten kommt
-
-UCI hat keine offizielle API, aber die Seite
-`uci-kinowelt.de/kinoprogramm/bochum-ruhr-park/46/poster` ist server-gerendert –
-ein einziger Request enthält das komplette Programm. `server.js` holt und parst es
-(Titel, Länge, FSK, Poster, Datum, Uhrzeit, Version, Buchungslink) und liefert es als
-JSON unter `/api/program`. Poster laufen über einen kleinen Proxy (`/img`), um den
-Hotlink-Schutz zu umgehen.
+- **↻ Aktualisieren** holt frische Daten (Worker cacht sonst ~10 Min am Edge).
 
 ## Bekannte Grenze
 
@@ -45,5 +64,6 @@ im Auto-Marathon übersprungen, bis die Länge bekannt ist.
 
 ## Anderes Kino?
 
-In `server.js` die `SOURCE`-URL und die `siteId` (im Poster-Proxy-Check) auf ein
-anderes UCI-Haus ändern – die Struktur ist bei allen UCI-Kinos gleich.
+`SOURCE`-URL und `siteId` in `worker/worker.js` **und** `server.js` auf ein anderes
+UCI-Haus ändern – die Struktur ist bei allen UCI-Kinos gleich. (Der Parser ist bewusst
+in beiden Dateien identisch gehalten; bei Markup-Änderungen beide anpassen.)

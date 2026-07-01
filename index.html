@@ -65,6 +65,7 @@
   .hint{font-size:12px;color:var(--dim);margin-bottom:10px}
   a.src{color:var(--accent2)}
 </style>
+<script src="config.js"></script>
 </head>
 <body>
 <header>
@@ -120,6 +121,12 @@
 <script>
 const S = { data:null, day:null, tab:'prog', plan:[] };
 
+// Datenquelle: lokal (localhost) der Node-Server (gleiche Herkunft),
+// produktiv der Cloudflare Worker aus config.js.
+const LOCAL = ['localhost','127.0.0.1',''].includes(location.hostname);
+const BASE = LOCAL ? '' : String(window.UCI_WORKER_BASE||'').replace(/\/+$/,'');
+const imgUrl = u => `${BASE}/img?u=${encodeURIComponent(u)}`;
+
 const $ = s => document.querySelector(s);
 const toMin = t => { const [h,m]=t.split(':').map(Number); return h*60+m; };
 const toHM = m => String(Math.floor(m/60)%24).padStart(2,'0')+':'+String(((m%60)+60)%60).padStart(2,'0');
@@ -167,7 +174,7 @@ function renderProgram(){
   for(const [film,shows] of byFilm){
     const rt = film.runtime!=null ? film.runtime+' min' : '<span class="unknown">Länge unbekannt</span>';
     html+=`<div class="film">
-      ${film.poster?`<img src="/img?u=${encodeURIComponent(film.poster)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`:'<img alt="">'}
+      ${film.poster?`<img src="${imgUrl(film.poster)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`:'<img alt="">'}
       <div class="body">
         <h3>${esc(film.title)}</h3>
         <div class="meta">
@@ -296,8 +303,14 @@ function buildDayOptions(){
 
 async function load(refresh){
   $('#err').style.display='none';
+  if(!LOCAL && !BASE){
+    $('#err').style.display='';
+    $('#err').innerHTML='Keine Worker-URL gesetzt. Trage sie in <b>config.js</b> ein (<code>window.UCI_WORKER_BASE</code>) – siehe README.';
+    $('#sub').textContent='nicht konfiguriert';
+    return;
+  }
   try{
-    const r=await fetch('/api/program'+(refresh?'?refresh=1':''));
+    const r=await fetch(BASE+'/program'+(refresh?'?_='+Date.now():''));
     const d=await r.json();
     if(d.error) throw new Error(d.error);
     S.data=d;
