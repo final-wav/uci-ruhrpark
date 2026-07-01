@@ -95,6 +95,26 @@
   .hint{font-size:14px;color:var(--dim);margin-bottom:16px;line-height:1.55}
   a.src{color:var(--dim);text-decoration:underline;text-underline-offset:2px}
   a.src:hover{color:var(--accent)}
+  button.big{width:100%;padding:13px;font-size:15px}
+  /* Ticket-Übersicht (Modal) */
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.74);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;z-index:50;overflow:auto}
+  .sheet{background:var(--surface);border-radius:18px;max-width:540px;width:100%;box-shadow:0 30px 80px rgba(0,0,0,.6);padding:24px}
+  .sheet h2{margin:0 0 4px;font-size:23px;font-weight:800;letter-spacing:-.01em}
+  .sheet .meta2{color:var(--dim);font-size:14px;margin-bottom:16px}
+  .stop{display:flex;gap:13px;align-items:center;padding:13px 0;border-bottom:1px solid var(--hair)}
+  .stop:last-of-type{border-bottom:none}
+  .stop-poster{width:48px;height:72px;object-fit:cover;border-radius:7px;flex:0 0 auto;background:var(--surface-2)}
+  .stop .si{flex:1;min-width:0}
+  .stop .si b{font-size:15px}
+  .stop .si .st-title{font-size:15px;font-weight:600;margin:2px 0 1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stop .si .st-sub{font-size:12px;color:var(--dim)}
+  .ticket{display:inline-block;background:var(--accent);color:var(--accent-ink);text-decoration:none;font-weight:700;padding:10px 15px;border-radius:10px;font-size:14px;white-space:nowrap;transition:.15s}
+  .ticket:hover{background:var(--accent-2)}
+  .uhint{font-size:12.5px;color:var(--dim);background:var(--surface-2);border-radius:9px;padding:10px 12px;margin-top:16px;line-height:1.5}
+  .modal-actions{display:flex;gap:9px;margin-top:18px;flex-wrap:wrap}
+  .modal-actions button{flex:1;min-width:120px;padding:12px}
+  .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);background:var(--accent);color:var(--accent-ink);font-weight:700;padding:11px 20px;border-radius:11px;z-index:60;box-shadow:var(--shadow);font-size:14px}
+  @media(max-width:560px){.sheet{padding:18px}}
 </style>
 <script src="config.js"></script>
 </head>
@@ -148,6 +168,8 @@
     </div>
   </div>
 </div>
+
+<div id="modal" class="modal" style="display:none"><div class="sheet" id="sheet"></div></div>
 
 <script>
 const S = { data:null, day:null, tab:'prog', plan:[] };
@@ -317,15 +339,94 @@ function renderPlan(){
   html+=`<div class="total">
     <div><b>${S.plan.length}</b> Filme · Kino von <b>${toHM(firstStart)}</b>${lastEnd!=null?' bis <b>'+toHM(lastEnd)+'</b>':''}</div>
     ${span!=null?`<div style="color:var(--dim)">Gesamtdauer ${Math.floor(span/60)} h ${span%60} min · reine Filmzeit ${Math.floor(totalRun/60)} h ${totalRun%60} min</div>`:''}
-    <div style="margin-top:8px;display:flex;gap:8px">
-      <button class="primary" onclick="autoExtend();render()">⏩ Auto-verlängern</button>
-      <button onclick="clearPlan()">Leeren</button>
+    <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
+      <button class="primary big" onclick="openSummary()">🎟 Fertig – Tickets holen</button>
+      <div style="display:flex;gap:8px">
+        <button style="flex:1" onclick="autoExtend();render()">⏩ Auto-verlängern</button>
+        <button style="flex:1" onclick="clearPlan()">Leeren</button>
+      </div>
     </div>
   </div>`;
   $('#plan').innerHTML=html;
 }
 
 function esc(s){return s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+// ---------- Ticket-Übersicht & Teilen ----------
+function findAnyByPerf(perf){
+  if(!S.data) return null;
+  for(const f of S.data.films) for(const s of f.shows) if(s.perf===perf) return {film:f,show:s};
+  return null;
+}
+function planShareUrl(){
+  const ids=S.plan.map(p=>p.show.perf).join('.');
+  const u=new URL(location.href.split('#')[0]);
+  u.hash='m='+ids+'&b='+buffer();
+  return u.toString();
+}
+function planAsText(){
+  const lines=S.plan.map(p=>{
+    const e=endOf(p.film,p.show);
+    return `• ${p.show.time}${e!=null?'–'+toHM(e):''}  ${p.film.title}${p.show.versions.length?' ('+p.show.versions.join('/')+')':''}`;
+  });
+  return `🎬 Kino-Marathon – UCI Ruhr-Park (${fmtDate(S.day)})\n`+lines.join('\n')+`\n\nTickets & Plan öffnen:\n${planShareUrl()}`;
+}
+function openSummary(){
+  if(!S.plan.length) return;
+  let firstStart=null,lastEnd=null;
+  const rows=S.plan.map(p=>{
+    const st=toMin(p.show.time), e=endOf(p.film,p.show);
+    if(firstStart==null) firstStart=st; if(e!=null) lastEnd=e;
+    return `<div class="stop">
+      ${p.film.poster?`<img class="stop-poster" src="${imgUrl(p.film.poster)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`:'<div class="stop-poster"></div>'}
+      <div class="si">
+        <b>${p.show.time}${e!=null?' – '+toHM(e):''}</b> ${p.show.versions.length?'<span class="badge">'+p.show.versions.join(' ')+'</span>':''}
+        <div class="st-title">${esc(p.film.title)}</div>
+        <div class="st-sub">${p.film.runtime!=null?p.film.runtime+' min':'Länge unbekannt'}</div>
+      </div>
+      <a class="ticket" href="${p.show.bookingUrl}" target="_blank" rel="noopener">🎟 Ticket ↗</a>
+    </div>`;
+  }).join('');
+  $('#sheet').innerHTML=`
+    <h2>🎟 Deine Tickets</h2>
+    <div class="meta2">${S.plan.length} Filme · ${weekday(S.day)}, ${fmtDate(S.day)} · ${toHM(firstStart)}${lastEnd!=null?' bis '+toHM(lastEnd):''}</div>
+    ${rows}
+    <div class="uhint">💳 Auch mit der Ultimate-Karte solltest du pro Vorstellung einen Platz reservieren – jeder Button führt direkt zur Buchung des jeweiligen Films.</div>
+    <div class="modal-actions">
+      <button class="primary" onclick="sharePlan()">🔗 Teilen</button>
+      <button onclick="copyList()">📋 Liste kopieren</button>
+      <button onclick="closeSummary()">Schließen</button>
+    </div>`;
+  $('#modal').style.display='flex';
+}
+function closeSummary(){ $('#modal').style.display='none'; }
+async function sharePlan(){
+  const url=planShareUrl();
+  if(navigator.share){
+    try{ await navigator.share({title:'Kino-Marathon UCI Ruhr-Park',text:planAsText(),url}); return; }catch(e){ if(e&&e.name==='AbortError') return; }
+  }
+  try{ await navigator.clipboard.writeText(url); toast('Link kopiert! 📋'); }
+  catch{ prompt('Link zum Teilen:', url); }
+}
+async function copyList(){
+  try{ await navigator.clipboard.writeText(planAsText()); toast('Liste kopiert! 📋'); }
+  catch{ prompt('Zum Teilen kopieren:', planAsText()); }
+}
+function toast(msg){
+  const t=document.createElement('div'); t.className='toast'; t.textContent=msg;
+  document.body.appendChild(t); setTimeout(()=>t.remove(),2200);
+}
+function applySharedPlan(){
+  const h=new URLSearchParams(location.hash.slice(1));
+  const m=h.get('m'); if(!m||!S.data) return false;
+  const b=h.get('b'); if(b&&/^\d+$/.test(b)) $('#buffer').value=b;
+  const items=m.split('.').map(findAnyByPerf).filter(Boolean);
+  if(!items.length) return false;
+  S.day=items[0].show.date; $('#daySel').value=S.day;
+  S.plan=items; S.tab='plan';
+  render(); openSummary();
+  return true;
+}
 
 // ---------- Setup ----------
 function buildDayOptions(){
@@ -354,7 +455,7 @@ async function load(refresh){
     S.data=d;
     buildDayOptions();
     $('#sub').innerHTML=`${d.filmCount} Filme · ${d.showCount} Vorstellungen · Stand ${new Date(d.fetchedAt).toLocaleString('de-DE')} · <a class="src" href="${d.source}" target="_blank">Quelle ↗</a>`;
-    render();
+    if(!applySharedPlan()) render();
   }catch(e){
     $('#err').style.display=''; $('#err').textContent='Fehler beim Laden: '+e.message;
   }
@@ -367,6 +468,9 @@ $('#gap').oninput=render;
 $('#refresh').onclick=()=>load(true);
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{S.tab=b.dataset.tab;render();});
 window.pickStart=pickStart; window.removeAt=removeAt; window.clearPlan=clearPlan; window.autoExtend=autoExtend; window.render=render;
+window.openSummary=openSummary; window.closeSummary=closeSummary; window.sharePlan=sharePlan; window.copyList=copyList;
+$('#modal').onclick=e=>{ if(e.target.id==='modal') closeSummary(); };
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeSummary(); });
 
 load(false);
 </script>
