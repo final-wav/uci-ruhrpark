@@ -138,7 +138,7 @@
 </head>
 <body>
 <header>
-  <h1><span class="brand">UCI</span> Ruhr-Park <span class="city">Bochum</span> <span class="ver">Build 8</span></h1>
+  <h1><span class="brand">UCI</span> Ruhr-Park <span class="city">Bochum</span> <span class="ver">Build 9</span></h1>
   <div class="sub" id="sub">lädt…</div>
 </header>
 <div class="wrap">
@@ -173,10 +173,10 @@
   <div id="progView"></div>
 
   <div id="planView" style="display:none">
-    <div class="hint">Wähle links einen <b>Startfilm</b>. Dann tippe unten unter „Das schaffst du danach noch" passende Filme an – oder lass dir mit <b>⚡ Auto-Vorschlag</b> eine komplette Kette vorschlagen. Jeden Film kannst du mit <b>⇄</b> tauschen oder mit ✕ entfernen.</div>
+    <div class="hint">Wähle links einen <b>Startfilm</b>. Die Liste zeigt danach nur noch Filme, die zeitlich passen (sie wird kürzer) – tippe sie an, um sie anzuhängen. Oder lass dir mit <b>⚡ Auto-Vorschlag</b> eine komplette Kette vorschlagen. Jeden Film kannst du mit <b>⇄</b> tauschen oder mit ✕ entfernen.</div>
     <div class="planner">
       <div class="col">
-        <h2>Vorstellungen am Tag</h2>
+        <h2 id="tlHead">Startfilm wählen</h2>
         <div class="timeline" id="timeline"></div>
       </div>
       <div class="col">
@@ -273,20 +273,20 @@ function showChip(film,s){
 
 // ---------- Marathon-Planer ----------
 function renderPlanner(){
-  const list=showsForDay();
-  // Timeline links
+  // Nur Filme zeigen, die (noch) hinzugefügt werden können -> die Liste wird kürzer
+  const list=showsForDay().filter(it=>!planConflict(it));
+  $('#tlHead').textContent = S.plan.length ? 'Das schaffst du noch' : 'Startfilm wählen';
   let tl='';
-  if(list.length===0) tl='<div class="empty">Keine Vorstellungen.</div>';
+  if(list.length===0) tl=`<div class="empty">${S.plan.length?'Kein weiterer Film passt mehr rein.':'Keine Vorstellungen.'}</div>`;
   for(const it of list){
     const e=endOf(it.film,it.show);
-    const conflict = planConflict(it);
-    tl+=`<div class="row ${conflict?'dis':''}" ${conflict?'':`onclick='pickStart(${JSON.stringify(it.show.perf)})'`}>
+    tl+=`<div class="row" onclick='pickStart(${JSON.stringify(it.show.perf)})'>
       ${it.film.poster?`<img class="row-poster" src="${imgUrl(it.film.poster)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`:'<div class="row-poster"></div>'}
       <div class="l">
         <div class="ttl">${esc(it.film.title)}</div>
         <div class="tm">${it.show.time}${e!=null?' → '+toHM(e):' → ?'} ${it.show.versions.length?'· '+it.show.versions.join(' '):''}</div>
       </div>
-      <div class="add">${conflict?'':'+'}</div>
+      <div class="add">+</div>
     </div>`;
   }
   $('#timeline').innerHTML=tl;
@@ -338,17 +338,6 @@ function autoSuggest(){
   toast(n>0 ? `⚡ ${n} Film${n>1?'e':''} vorgeschlagen – jeder mit ⇄ tauschbar` : 'Kein weiterer Film passt mehr rein');
 }
 
-// Filme, die nach dem letzten Plan-Film noch zeitlich passen (für "Das schaffst du danach noch").
-function nextCandidates(){
-  if(!S.plan.length) return [];
-  const last=S.plan[S.plan.length-1];
-  const le=endOf(last.film,last.show);
-  if(le==null) return [];
-  const used=new Set(S.plan.map(p=>p.film));
-  return showsForDay()
-    .filter(it=>!used.has(it.film) && endOf(it.film,it.show)!=null && toMin(it.show.time)>=le+gapMin())
-    .sort((a,b)=>toMin(a.show.time)-toMin(b.show.time));
-}
 // Alternativen für Slot i (passt nach dem vorherigen Film; anderer Film als der aktuelle).
 function slotCandidates(i){
   const prevEnd = i>0 ? endOf(S.plan[i-1].film,S.plan[i-1].show) : null;
@@ -413,14 +402,6 @@ function renderPlan(){
     }
     if(e!=null){ prevEnd=e; lastEnd=e; totalRun+=p.film.runtime; }
   });
-  // Das schaffst du danach noch
-  const nexts=nextCandidates();
-  const lastKnown=endOf(S.plan[S.plan.length-1].film,S.plan[S.plan.length-1].show)!=null;
-  if(nexts.length){
-    html+=`<div class="nextbox"><div class="nexth">Das schaffst du danach noch</div>${nexts.slice(0,8).map(it=>candRow(it,`pickStart('${it.show.perf}')`,true)).join('')}</div>`;
-  } else if(lastKnown){
-    html+=`<div class="nextnote">Danach passt kein weiterer Film mehr rein.</div>`;
-  }
   const span = (firstStart!=null&&lastEnd!=null)? lastEnd-firstStart : null;
   html+=`<div class="total">
     <div><b>${S.plan.length}</b> Filme · Kino von <b>${toHM(firstStart)}</b>${lastEnd!=null?' bis <b>'+toHM(lastEnd)+'</b>':''}</div>
