@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UCI Ruhr-Park – Programm & Marathon-Planer</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2330; --line:#2a3441;
+    --txt:#e6edf3; --dim:#8b98a8; --accent:#f5a623; --accent2:#3b82f6;
+    --green:#2ea043; --red:#e5534b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--txt);}
+  header{padding:16px 20px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:20}
+  h1{margin:0;font-size:19px}
+  .sub{color:var(--dim);font-size:12px;margin-top:3px}
+  .wrap{max-width:1180px;margin:0 auto;padding:18px 16px 60px}
+  .controls{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:16px}
+  .ctrl label{display:block;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px}
+  select,input[type=number]{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:14px}
+  input[type=number]{width:74px}
+  button{cursor:pointer;background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:13px}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent);color:#1a1200;border-color:var(--accent);font-weight:600}
+  .tabs{display:flex;gap:8px;margin-bottom:14px}
+  .tabs button{flex:0 0 auto}
+  .tabs button.active{background:var(--accent2);border-color:var(--accent2);color:#fff}
+  .grow{flex:1}
+  /* Film cards */
+  .film{display:flex;gap:14px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
+  .film img{width:74px;height:110px;object-fit:cover;border-radius:8px;background:var(--panel2);flex:0 0 auto}
+  .film .body{flex:1;min-width:0}
+  .film h3{margin:0 0 4px;font-size:16px}
+  .meta{color:var(--dim);font-size:12px;margin-bottom:9px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .badge{display:inline-block;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:11px}
+  .fsk{background:#20304a;border-color:#2d4568;color:#cfe0ff}
+  .shows{display:flex;flex-wrap:wrap;gap:7px}
+  .show{display:flex;flex-direction:column;align-items:center;text-decoration:none;color:var(--txt);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:5px 9px;line-height:1.25;transition:.1s}
+  .show:hover{border-color:var(--accent);transform:translateY(-1px)}
+  .show .t{font-weight:600;font-size:14px}
+  .show .e{font-size:11px;color:var(--dim)}
+  .show .v{font-size:9px;color:var(--accent);letter-spacing:.03em;margin-top:1px}
+  .unknown{color:var(--red)}
+  /* Planner */
+  .planner{display:grid;grid-template-columns:1fr 340px;gap:16px}
+  @media(max-width:820px){.planner{grid-template-columns:1fr}.film img{width:56px;height:84px}}
+  .col h2{font-size:14px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em;margin:2px 0 10px}
+  .timeline{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;max-height:70vh;overflow:auto}
+  .row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px;border-radius:8px;cursor:pointer;border:1px solid transparent}
+  .row:hover{background:var(--panel2);border-color:var(--line)}
+  .row.dis{opacity:.32;cursor:not-allowed}
+  .row .l{min-width:0}
+  .row .ttl{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:230px}
+  .row .tm{font-size:12px;color:var(--dim)}
+  .row .add{font-size:12px;color:var(--green);font-weight:700}
+  .plan{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;position:sticky;top:88px}
+  .plan .item{border-left:3px solid var(--accent);padding:7px 10px;margin-bottom:8px;background:var(--panel2);border-radius:0 8px 8px 0}
+  .plan .item .x{float:right;color:var(--red);cursor:pointer;font-weight:700}
+  .gap{font-size:11px;color:var(--dim);text-align:center;margin:2px 0}
+  .empty{color:var(--dim);font-size:13px;text-align:center;padding:20px}
+  .total{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);font-size:13px}
+  .total b{color:var(--accent)}
+  .err{background:#3a1d1d;border:1px solid #6b2b2b;color:#ffb4b4;padding:10px 12px;border-radius:8px;margin-bottom:12px}
+  .hint{font-size:12px;color:var(--dim);margin-bottom:10px}
+  a.src{color:var(--accent2)}
+</style>
+</head>
+<body>
+<header>
+  <h1>🎬 UCI Ruhr-Park Bochum</h1>
+  <div class="sub" id="sub">lädt…</div>
+</header>
+<div class="wrap">
+  <div class="err" id="err" style="display:none"></div>
+
+  <div class="controls">
+    <div class="ctrl">
+      <label>Tag</label>
+      <select id="daySel"></select>
+    </div>
+    <div class="ctrl">
+      <label>Werbung/Trailer (Min)</label>
+      <input type="number" id="buffer" value="25" min="0" max="60">
+    </div>
+    <div class="ctrl">
+      <label>Saalwechsel-Pause (Min)</label>
+      <input type="number" id="gap" value="15" min="0" max="60">
+    </div>
+    <div class="ctrl">
+      <label>Version</label>
+      <select id="verSel"><option value="">alle</option></select>
+    </div>
+    <div class="grow"></div>
+    <div class="ctrl"><button id="refresh">↻ Aktualisieren</button></div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="prog">Programm</button>
+    <button class="tab" data-tab="plan">🍿 Marathon-Planer</button>
+  </div>
+
+  <div id="progView"></div>
+
+  <div id="planView" style="display:none">
+    <div class="hint">Wähle einen Startfilm links – der Planer hängt automatisch alle Filme an, die du danach ohne Kollision noch schaffst (inkl. Endzeit + Pausen). Du kannst Vorstellungen auch manuell anklicken.</div>
+    <div class="planner">
+      <div class="col">
+        <h2>Vorstellungen am Tag</h2>
+        <div class="timeline" id="timeline"></div>
+      </div>
+      <div class="col">
+        <h2>Dein Kino-Marathon</h2>
+        <div class="plan" id="plan"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const S = { data:null, day:null, tab:'prog', plan:[] };
+
+const $ = s => document.querySelector(s);
+const toMin = t => { const [h,m]=t.split(':').map(Number); return h*60+m; };
+const toHM = m => String(Math.floor(m/60)%24).padStart(2,'0')+':'+String(((m%60)+60)%60).padStart(2,'0');
+const fmtDate = d => `${d.slice(6,8)}.${d.slice(4,6)}.${d.slice(0,4)}`;
+const WD=['So','Mo','Di','Mi','Do','Fr','Sa'];
+const weekday = d => WD[new Date(+d.slice(0,4),+d.slice(4,6)-1,+d.slice(6,8)).getDay()];
+const buffer = () => Number($('#buffer').value)||0;
+const gapMin = () => Number($('#gap').value)||0;
+
+// alle (Film,Show)-Paare für den aktuell gewählten Tag + Versionsfilter
+function showsForDay(){
+  const ver=$('#verSel').value;
+  const list=[];
+  for(const f of S.data.films){
+    for(const s of f.shows){
+      if(s.date!==S.day) continue;
+      if(ver && !s.versions.includes(ver)) continue;
+      list.push({film:f,show:s});
+    }
+  }
+  return list.sort((a,b)=>toMin(a.show.time)-toMin(b.show.time));
+}
+// Endzeit einer Vorstellung (in Minuten). null wenn Länge unbekannt.
+function endOf(film,show){
+  if(film.runtime==null) return null;
+  return toMin(show.time)+buffer()+film.runtime;
+}
+
+function render(){
+  $('#progView').style.display = S.tab==='prog'?'':'none';
+  $('#planView').style.display = S.tab==='plan'?'':'none';
+  document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===S.tab));
+  if(S.tab==='prog') renderProgram(); else renderPlanner();
+}
+
+function renderProgram(){
+  const list=showsForDay();
+  const byFilm=new Map();
+  for(const {film,show} of list){
+    if(!byFilm.has(film)) byFilm.set(film,[]);
+    byFilm.get(film).push(show);
+  }
+  if(byFilm.size===0){ $('#progView').innerHTML='<div class="empty">Keine Vorstellungen an diesem Tag / Filter.</div>'; return; }
+  let html='';
+  for(const [film,shows] of byFilm){
+    const rt = film.runtime!=null ? film.runtime+' min' : '<span class="unknown">Länge unbekannt</span>';
+    html+=`<div class="film">
+      ${film.poster?`<img src="/img?u=${encodeURIComponent(film.poster)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`:'<img alt="">'}
+      <div class="body">
+        <h3>${esc(film.title)}</h3>
+        <div class="meta">
+          ${film.age?`<span class="badge fsk">FSK ${film.age}</span>`:''}
+          <span class="badge">${rt}</span>
+          <a class="src" href="${film.detailUrl}" target="_blank">Details ↗</a>
+        </div>
+        <div class="shows">${shows.map(s=>showChip(film,s)).join('')}</div>
+      </div></div>`;
+  }
+  $('#progView').innerHTML=html;
+}
+function showChip(film,s){
+  const e=endOf(film,s);
+  const end = e!=null ? `bis ${toHM(e)}` : '– : –';
+  return `<a class="show" href="${s.bookingUrl}" target="_blank" title="Start ${s.time}${e!=null?' · Ende ~'+toHM(e)+' (inkl. '+buffer()+'min Werbung)':''}">
+    <span class="t">${s.time}</span>
+    <span class="e">${end}</span>
+    ${s.versions.length?`<span class="v">${s.versions.join(' · ')}</span>`:''}
+  </a>`;
+}
+
+// ---------- Marathon-Planer ----------
+function renderPlanner(){
+  const list=showsForDay();
+  // Timeline links
+  let tl='';
+  if(list.length===0) tl='<div class="empty">Keine Vorstellungen.</div>';
+  for(const it of list){
+    const e=endOf(it.film,it.show);
+    const conflict = planConflict(it);
+    tl+=`<div class="row ${conflict?'dis':''}" ${conflict?'':`onclick='pickStart(${JSON.stringify(it.show.perf)})'`}>
+      <div class="l">
+        <div class="ttl">${esc(it.film.title)}</div>
+        <div class="tm">${it.show.time}${e!=null?' → '+toHM(e):' → ?'} ${it.show.versions.length?'· '+it.show.versions.join(' '):''}</div>
+      </div>
+      <div class="add">${conflict?'':'+'}</div>
+    </div>`;
+  }
+  $('#timeline').innerHTML=tl;
+  renderPlan();
+}
+function keyOf(it){ return it.show.perf; }
+function findByPerf(perf){ return showsForDay().find(it=>it.show.perf===perf); }
+
+function planConflict(it){
+  // true, wenn dieser Show nicht (mehr) in den bestehenden Plan passt
+  if(S.plan.some(p=>p.show.perf===it.show.perf)) return true;
+  if(S.plan.some(p=>p.film===it.film)) return true; // selben Film nicht doppelt
+  if(S.plan.length===0) return false;
+  const last=S.plan[S.plan.length-1];
+  const le=endOf(last.film,last.show);
+  if(le==null) return false; // unbekannt -> nicht blockieren
+  return toMin(it.show.time) < le + gapMin();
+}
+
+function pickStart(perf){
+  const it=findByPerf(perf); if(!it) return;
+  if(S.plan.length===0){
+    S.plan=[it];
+    autoExtend();
+  }else{
+    if(planConflict(it)) return;
+    S.plan.push(it);
+  }
+  render();
+}
+// hängt greedy die frühestmöglichen Folgefilme an
+function autoExtend(){
+  const all=showsForDay();
+  let guard=0;
+  while(guard++<20){
+    const last=S.plan[S.plan.length-1];
+    const le=endOf(last.film,last.show);
+    if(le==null) break;
+    const usedFilms=new Set(S.plan.map(p=>p.film));
+    const next=all
+      .filter(it=>!usedFilms.has(it.film) && endOf(it.film,it.show)!=null && toMin(it.show.time)>=le+gapMin())
+      .sort((a,b)=>toMin(a.show.time)-toMin(b.show.time))[0];
+    if(!next) break;
+    S.plan.push(next);
+  }
+}
+function removeAt(i){ S.plan.splice(i); render(); }
+function clearPlan(){ S.plan=[]; render(); }
+
+function renderPlan(){
+  if(S.plan.length===0){ $('#plan').innerHTML='<div class="empty">Noch kein Film gewählt.<br>Klicke links auf einen Startfilm.</div>'; return; }
+  let html=''; let prevEnd=null; let firstStart=null; let lastEnd=null; let totalRun=0;
+  S.plan.forEach((p,i)=>{
+    const st=toMin(p.show.time), e=endOf(p.film,p.show);
+    if(firstStart==null) firstStart=st;
+    if(prevEnd!=null){ const w=st-prevEnd; html+=`<div class="gap">↓ ${w} min Pause</div>`; }
+    html+=`<div class="item"><span class="x" onclick="removeAt(${i})">✕</span>
+      <div><b>${p.show.time}${e!=null?' – '+toHM(e):''}</b> ${p.show.versions.length?'<span class="badge">'+p.show.versions.join(' ')+'</span>':''}</div>
+      <div style="font-size:13px">${esc(p.film.title)}</div>
+      <div style="font-size:11px;color:var(--dim)">${p.film.runtime!=null?p.film.runtime+' min + '+buffer()+' min Werbung':'Länge unbekannt'}</div>
+    </div>`;
+    if(e!=null){ prevEnd=e; lastEnd=e; totalRun+=p.film.runtime; }
+  });
+  const span = (firstStart!=null&&lastEnd!=null)? lastEnd-firstStart : null;
+  html+=`<div class="total">
+    <div><b>${S.plan.length}</b> Filme · Kino von <b>${toHM(firstStart)}</b>${lastEnd!=null?' bis <b>'+toHM(lastEnd)+'</b>':''}</div>
+    ${span!=null?`<div style="color:var(--dim)">Gesamtdauer ${Math.floor(span/60)} h ${span%60} min · reine Filmzeit ${Math.floor(totalRun/60)} h ${totalRun%60} min</div>`:''}
+    <div style="margin-top:8px;display:flex;gap:8px">
+      <button class="primary" onclick="autoExtend();render()">⏩ Auto-verlängern</button>
+      <button onclick="clearPlan()">Leeren</button>
+    </div>
+  </div>`;
+  $('#plan').innerHTML=html;
+}
+
+function esc(s){return s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+// ---------- Setup ----------
+function buildDayOptions(){
+  const dates=new Set();
+  const vers=new Set();
+  for(const f of S.data.films) for(const s of f.shows){ dates.add(s.date); s.versions.forEach(v=>vers.add(v)); }
+  const sorted=[...dates].sort();
+  $('#daySel').innerHTML=sorted.map(d=>`<option value="${d}">${weekday(d)}, ${fmtDate(d)}</option>`).join('');
+  S.day=sorted[0];
+  const vs=$('#verSel');
+  vs.innerHTML='<option value="">alle</option>'+[...vers].sort().map(v=>`<option>${v}</option>`).join('');
+}
+
+async function load(refresh){
+  $('#err').style.display='none';
+  try{
+    const r=await fetch('/api/program'+(refresh?'?refresh=1':''));
+    const d=await r.json();
+    if(d.error) throw new Error(d.error);
+    S.data=d;
+    buildDayOptions();
+    $('#sub').innerHTML=`${d.filmCount} Filme · ${d.showCount} Vorstellungen · Stand ${new Date(d.fetchedAt).toLocaleString('de-DE')} · <a class="src" href="${d.source}" target="_blank">Quelle ↗</a>`;
+    render();
+  }catch(e){
+    $('#err').style.display=''; $('#err').textContent='Fehler beim Laden: '+e.message;
+  }
+}
+
+$('#daySel').onchange=e=>{S.day=e.target.value;S.plan=[];render();};
+$('#verSel').onchange=()=>{S.plan=[];render();};
+$('#buffer').oninput=render;
+$('#gap').oninput=render;
+$('#refresh').onclick=()=>load(true);
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{S.tab=b.dataset.tab;render();});
+window.pickStart=pickStart; window.removeAt=removeAt; window.clearPlan=clearPlan; window.autoExtend=autoExtend; window.render=render;
+
+load(false);
+</script>
+</body>
+</html>
