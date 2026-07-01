@@ -30,6 +30,9 @@
     border-bottom:1px solid var(--hair);
   }
   h1{margin:0;font-size:26px;font-weight:800;letter-spacing:-.02em}
+  h1 .brand{color:var(--accent)}
+  h1 .city{color:var(--dim)}
+  .est{font-size:10px;font-weight:700;color:var(--accent);border:1px solid rgba(245,166,35,.4);border-radius:4px;padding:0 4px;margin-left:5px;vertical-align:middle;letter-spacing:.03em;cursor:help}
   .sub{color:var(--dim);font-size:13px;margin-top:5px}
   .wrap{max-width:1240px;margin:0 auto;padding:26px 24px 80px}
   .controls{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-end;margin-bottom:24px}
@@ -97,7 +100,7 @@
 </head>
 <body>
 <header>
-  <h1>🎬 UCI Ruhr-Park Bochum</h1>
+  <h1><span class="brand">UCI</span> Ruhr-Park <span class="city">Bochum</span></h1>
   <div class="sub" id="sub">lädt…</div>
 </header>
 <div class="wrap">
@@ -200,7 +203,9 @@ function renderProgram(){
   if(byFilm.size===0){ $('#progView').innerHTML='<div class="empty">Keine Vorstellungen an diesem Tag / Filter.</div>'; return; }
   let html='';
   for(const [film,shows] of byFilm){
-    const rt = film.runtime!=null ? film.runtime+' min' : '<span class="unknown">Länge unbekannt</span>';
+    const rt = film.runtime!=null
+      ? film.runtime+' min'+(film.runtimeSource==='imdb'?' <span class="est" title="Laufzeit über IMDb/Wikidata ermittelt – nicht offiziell von UCI angegeben">IMDb</span>':'')
+      : '<span class="unknown">Länge unbekannt</span>';
     html+=`<div class="film">
       ${film.poster?`<img src="${imgUrl(film.poster)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`:'<img alt="">'}
       <div class="body">

@@ -83,12 +83,57 @@ function parseProgram(html) {
       title,
       detailUrl: BASE + href,
       runtime,
+      runtimeSource: runtime != null ? 'uci' : null,
       poster: poster ? BASE + poster : null,
       age,
       shows,
     });
   }
   return films;
+}
+
+// ── Laufzeit-Anreicherung für Filme ohne Länge (UCI liefert sie nicht) ──
+// Weg: Titel → IMDb-ID (Suggestion-API) → Laufzeit (Wikidata P2047). Beides keyless.
+function cleanTitle(t) {
+  let q = t.toLowerCase().replace(/\(.*?\)/g, '');
+  q = q.replace(/\s*[-–:]\s*(live action|extended version|director.?s cut|the imax experience|ov|omu|re-?release).*$/, '');
+  q = q.replace(/\b(live action|extended version|3d|imax|ov|omu)\b/g, '');
+  return q.replace(/\s+/g, ' ').trim();
+}
+async function imdbId(title) {
+  const q = cleanTitle(title);
+  if (!q) return null;
+  const r = await fetch(`https://v3.sg.media-imdb.com/suggestion/x/${encodeURIComponent(q)}.json?includeVideos=0`,
+    { headers: { 'User-Agent': UA }, cf: { cacheTtl: 86400, cacheEverything: true }, signal: AbortSignal.timeout(6000) });
+  if (!r.ok) return null;
+  const d = await r.json();
+  const recent = [2024, 2025, 2026, 2027];
+  const cs = (d.d || []).filter(x => String(x.id || '').startsWith('tt') && ['feature', 'TV movie', 'video', undefined, null].includes(x.q));
+  if (!cs.length) return null;
+  cs.sort((a, b) => (recent.includes(a.y) ? 0 : 1) - (recent.includes(b.y) ? 0 : 1) || (a.rank || 1e9) - (b.rank || 1e9));
+  return cs[0].id;
+}
+async function wikidataRuntime(ttid) {
+  const sparql = `SELECT ?dur WHERE { ?i wdt:P345 "${ttid}". ?i wdt:P2047 ?dur. } LIMIT 1`;
+  const r = await fetch('https://query.wikidata.org/sparql?format=json&query=' + encodeURIComponent(sparql),
+    { headers: { 'User-Agent': UA, Accept: 'application/sparql-results+json' }, cf: { cacheTtl: 86400, cacheEverything: true }, signal: AbortSignal.timeout(6000) });
+  if (!r.ok) return null;
+  const d = await r.json();
+  const b = d.results && d.results.bindings;
+  if (!b || !b.length) return null;
+  const v = Math.round(parseFloat(b[0].dur.value));
+  return v > 0 && v < 400 ? v : null;
+}
+async function enrichRuntimes(films) {
+  const need = films.filter(f => f.runtime == null);
+  await Promise.allSettled(need.map(async f => {
+    try {
+      const id = await imdbId(f.title);
+      if (!id) return;
+      const rt = await wikidataRuntime(id);
+      if (rt) { f.runtime = rt; f.runtimeSource = 'imdb'; }
+    } catch { /* still. leer lassen -> "Länge unbekannt" */ }
+  }));
 }
 
 function cors() {
@@ -139,6 +184,7 @@ export default {
         if (!res.ok) throw new Error('UCI antwortete mit ' + res.status);
         const html = await res.text();
         const films = parseProgram(html);
+        await enrichRuntimes(films);
         const body = {
           cinema: 'UCI Ruhr-Park Bochum',
           source: SOURCE,
