@@ -32,6 +32,7 @@
   h1{margin:0;font-size:26px;font-weight:800;letter-spacing:-.02em}
   h1 .brand{color:var(--accent)}
   h1 .city{color:var(--dim)}
+  h1 .ver{font-size:11px;font-weight:600;color:var(--dim2);vertical-align:middle;margin-left:6px;background:var(--surface-2);padding:2px 7px;border-radius:6px}
   .est{font-size:10px;font-weight:700;color:var(--accent);border:1px solid rgba(245,166,35,.4);border-radius:4px;padding:0 4px;margin-left:5px;vertical-align:middle;letter-spacing:.03em;cursor:help}
   .sub{color:var(--dim);font-size:13px;margin-top:5px}
   .wrap{max-width:1240px;margin:0 auto;padding:26px 24px 80px}
@@ -83,14 +84,14 @@
   .row .add{font-size:22px;color:var(--accent);font-weight:400;line-height:1}
   .plan{background:var(--surface);border-radius:14px;padding:16px;position:sticky;top:96px;box-shadow:var(--shadow)}
   .plan .item{display:flex;gap:12px;padding:10px;margin-bottom:10px;background:var(--surface-2);border:1px solid transparent;border-radius:10px;position:relative}
-  .plan .item.suggested{border:1px dashed rgba(245,166,35,.32);background:rgba(245,166,35,.05)}
+  .plan .item.suggested{border:1px dashed rgba(245,166,35,.55);background:rgba(245,166,35,.08)}
   .item-poster{width:46px;height:69px;object-fit:cover;border-radius:6px;background:var(--surface);flex:0 0 auto}
   .plan .item .info{min-width:0;flex:1;padding-right:46px}
   .item-ctrls{position:absolute;top:9px;right:11px;display:flex;gap:11px}
   .item-ctrls .ic{color:var(--dim2);cursor:pointer;font-weight:700;font-size:15px;line-height:1;transition:.13s}
   .item-ctrls .ic:hover{color:var(--accent)}
   .item-ctrls .ic.x:hover{color:var(--danger)}
-  .sugg{font-size:9.5px;font-weight:700;color:var(--accent);border:1px dashed rgba(245,166,35,.5);border-radius:4px;padding:0 5px;margin-left:6px;vertical-align:middle;letter-spacing:.04em;text-transform:uppercase}
+  .sugg{font-size:10px;font-weight:800;color:var(--accent-ink);background:var(--accent);border-radius:4px;padding:1px 7px;margin-left:6px;vertical-align:middle;letter-spacing:.04em;text-transform:uppercase}
   /* Tausch-Auswahl & "danach noch" */
   .chooser,.nextbox{background:var(--bg);border-radius:10px;padding:6px;margin:-4px 0 10px}
   .nextbox{margin:12px 0 4px}
@@ -137,7 +138,7 @@
 </head>
 <body>
 <header>
-  <h1><span class="brand">UCI</span> Ruhr-Park <span class="city">Bochum</span></h1>
+  <h1><span class="brand">UCI</span> Ruhr-Park <span class="city">Bochum</span> <span class="ver">Build 8</span></h1>
   <div class="sub" id="sub">lädt…</div>
 </header>
 <div class="wrap">
@@ -330,7 +331,12 @@ function autoExtend(){
     S.plan.push(planItem(next,true));
   }
 }
-function autoSuggest(){ autoExtend(); S.swapOpen=null; render(); }
+function autoSuggest(){
+  const before=S.plan.length;
+  autoExtend(); S.swapOpen=null; render();
+  const n=S.plan.length-before;
+  toast(n>0 ? `⚡ ${n} Film${n>1?'e':''} vorgeschlagen – jeder mit ⇄ tauschbar` : 'Kein weiterer Film passt mehr rein');
+}
 
 // Filme, die nach dem letzten Plan-Film noch zeitlich passen (für "Das schaffst du danach noch").
 function nextCandidates(){
