@@ -13,7 +13,8 @@
 
 const SOURCE = 'https://www.uci-kinowelt.de/kinoprogramm/bochum-ruhr-park/46/poster';
 const BASE = 'https://www.uci-kinowelt.de';
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) UCI-Ruhrpark-Viewer';
+// Echter Browser-User-Agent – ein eigener Zusatz triggert bei UCI zeitweise 403.
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
 // --- HTML-Entities dekodieren ---
 const NAMED = {
@@ -136,6 +137,44 @@ async function enrichRuntimes(films) {
   }));
 }
 
+// UCI holen mit Browser-Headern + Retry (UCI blockt Cloudflare-IPs zeitweise mit 403).
+async function fetchUciHtml() {
+  const headers = {
+    'User-Agent': UA,
+    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'de-DE,de;q=0.9,en;q=0.8',
+    Referer: BASE + '/',
+    'Cache-Control': 'no-cache',
+  };
+  let last = 0;
+  for (let i = 0; i < 3; i++) {
+    const res = await fetch(SOURCE, { headers });
+    if (res.ok) return res.text();
+    last = res.status;
+    await new Promise(r => setTimeout(r, 350 * (i + 1)));
+  }
+  throw new Error('UCI antwortete mit ' + last);
+}
+async function buildProgram() {
+  const html = await fetchUciHtml();
+  const films = parseProgram(html);
+  await enrichRuntimes(films);
+  return {
+    cinema: 'UCI Ruhr-Park Bochum',
+    source: SOURCE,
+    fetchedAt: new Date().toISOString(),
+    filmCount: films.length,
+    showCount: films.reduce((a, f) => a + f.shows.length, 0),
+    films,
+  };
+}
+function withCors(res, extra) {
+  const h = new Headers(res.headers);
+  for (const [k, v] of Object.entries(cors())) h.set(k, v);
+  if (extra) for (const [k, v] of Object.entries(extra)) h.set(k, v);
+  return new Response(res.body, { status: res.status, headers: h });
+}
+
 function cors() {
   return {
     'Access-Control-Allow-Origin': '*',
@@ -146,7 +185,7 @@ function cors() {
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, env, ctx) {
     if (request.method === 'OPTIONS') return new Response(null, { headers: cors() });
     if (request.method !== 'GET') return new Response('Method Not Allowed', { status: 405, headers: cors() });
 
@@ -174,29 +213,25 @@ export default {
       });
     }
 
-    // Programm
+    // Programm – mit Edge-Cache (10 Min) + Stale-Fallback (12 h), falls UCI blockt
     if (path === '/program' || path === '/') {
+      const cache = caches.default;
+      const freshKey = new Request('https://uci.cache/program-fresh');
+      const staleKey = new Request('https://uci.cache/program-stale');
+      const bypass = url.search.length > 1; // ?_=… von "↻ Aktualisieren" -> frisch holen
+      if (!bypass) {
+        const hit = await cache.match(freshKey);
+        if (hit) return withCors(hit, { 'Cache-Control': 'no-store' });
+      }
       try {
-        const res = await fetch(SOURCE, {
-          headers: { 'User-Agent': UA },
-          cf: { cacheTtl: 600, cacheEverything: true },
-        });
-        if (!res.ok) throw new Error('UCI antwortete mit ' + res.status);
-        const html = await res.text();
-        const films = parseProgram(html);
-        await enrichRuntimes(films);
-        const body = {
-          cinema: 'UCI Ruhr-Park Bochum',
-          source: SOURCE,
-          fetchedAt: new Date().toISOString(),
-          filmCount: films.length,
-          showCount: films.reduce((a, f) => a + f.shows.length, 0),
-          films,
-        };
-        return new Response(JSON.stringify(body), {
-          headers: { ...cors(), 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, max-age=300' },
-        });
+        const json = JSON.stringify(await buildProgram());
+        const store = ttl => new Response(json, { headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'max-age=' + ttl } });
+        ctx.waitUntil(cache.put(freshKey, store(600)));
+        ctx.waitUntil(cache.put(staleKey, store(43200)));
+        return new Response(json, { headers: { ...cors(), 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, max-age=300' } });
       } catch (err) {
+        const stale = await cache.match(staleKey);
+        if (stale) return withCors(stale, { 'Cache-Control': 'no-store', 'X-UCI-Stale': '1' });
         return new Response(JSON.stringify({ error: String(err && err.message || err) }), {
           status: 502, headers: { ...cors(), 'Content-Type': 'application/json' },
         });

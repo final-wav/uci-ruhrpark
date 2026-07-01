@@ -138,10 +138,20 @@ async function enrichRuntimes(films) {
 async function getProgram(force = false) {
   const now = Date.now();
   if (!force && cache.data && now - cache.at < CACHE_MS) return cache;
-  const res = await fetch(SOURCE, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) UCI-Ruhrpark-Viewer' },
-  });
-  if (!res.ok) throw new Error('UCI antwortete mit ' + res.status);
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'de-DE,de;q=0.9,en;q=0.8',
+    Referer: BASE + '/',
+  };
+  let res, last = 0;
+  for (let i = 0; i < 3; i++) {
+    res = await fetch(SOURCE, { headers });
+    if (res.ok) break;
+    last = res.status;
+    await new Promise(r => setTimeout(r, 350 * (i + 1)));
+  }
+  if (!res.ok) throw new Error('UCI antwortete mit ' + last);
   const html = await res.text();
   const films = parseProgram(html);
   await enrichRuntimes(films);
