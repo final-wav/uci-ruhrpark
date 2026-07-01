@@ -133,12 +133,29 @@
   .modal-actions button{flex:1;min-width:120px;padding:12px}
   .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);background:var(--accent);color:var(--accent-ink);font-weight:700;padding:11px 20px;border-radius:11px;z-index:60;box-shadow:var(--shadow);font-size:14px}
   @media(max-width:560px){.sheet{padding:18px}}
+  .beta{font-size:9px;font-weight:800;color:var(--accent-ink);background:var(--accent);border-radius:4px;padding:1px 5px;vertical-align:middle;letter-spacing:.03em;text-transform:uppercase}
+  /* Zeitplan (Gantt) */
+  .gwrap{overflow-x:auto;padding-bottom:10px}
+  .grow2{display:flex;align-items:stretch;min-height:48px}
+  .grow2.axis{min-height:28px;position:sticky;top:0;z-index:3}
+  .glabel{width:150px;flex:0 0 150px;position:sticky;left:0;z-index:2;background:var(--bg);display:flex;align-items:center;gap:8px;padding:5px 12px 5px 0;font-size:13px;font-weight:600}
+  .glabel img{width:24px;height:36px;object-fit:cover;border-radius:4px;flex:0 0 auto;background:var(--surface-2)}
+  .glabel span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .gtrack{position:relative;flex:0 0 auto;border-bottom:1px solid var(--hair);background:repeating-linear-gradient(90deg,var(--hair) 0 1px,transparent 1px 144px)}
+  .gtrack.axis{background:none;border:none}
+  .gtick{position:absolute;top:0;font-size:11px;color:var(--dim2);transform:translateX(-50%);padding-top:8px;white-space:nowrap}
+  .gblock{position:absolute;top:7px;bottom:7px;background:var(--surface-3);border-radius:6px;display:flex;align-items:center;padding:0 7px;font-size:12px;font-weight:700;cursor:pointer;overflow:hidden;transition:.12s;box-shadow:0 2px 6px rgba(0,0,0,.35)}
+  .gblock:hover{background:#3a3a41;transform:translateY(-1px)}
+  .gblock.sel{background:var(--accent);color:var(--accent-ink);box-shadow:0 3px 10px rgba(245,166,35,.35)}
+  .gblock.dim{opacity:.26}
+  .gblock.dim:hover{transform:none}
+  .gfoot{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:14px;background:var(--surface);border-radius:12px;padding:12px 16px;box-shadow:var(--shadow);font-size:14px}
 </style>
 <script src="config.js"></script>
 </head>
 <body>
 <header>
-  <h1><span class="brand">UCI</span> Ruhr-Park <span class="city">Bochum</span> <span class="ver">Build 9</span></h1>
+  <h1><span class="brand">UCI</span> Ruhr-Park <span class="city">Bochum</span> <span class="ver">Build 10</span></h1>
   <div class="sub" id="sub">lädt…</div>
 </header>
 <div class="wrap">
@@ -168,6 +185,7 @@
   <div class="tabs">
     <button class="tab active" data-tab="prog">Programm</button>
     <button class="tab" data-tab="plan">🍿 Marathon-Planer</button>
+    <button class="tab" data-tab="gantt">🕒 Zeitplan <span class="beta">Beta</span></button>
   </div>
 
   <div id="progView"></div>
@@ -184,6 +202,11 @@
         <div class="plan" id="plan"></div>
       </div>
     </div>
+  </div>
+
+  <div id="ganttView" style="display:none">
+    <div class="hint">Beta-Ansicht: alle Vorstellungen des Tages auf einer <b>Zeitachse</b>. Tippe Blöcke an, um deinen Marathon zu bauen – <b>gold = gewählt</b>, blass = passt zeitlich nicht mehr. Blockbreite = Filmlänge + Werbung. Puffer & Pause gelten wie überall.</div>
+    <div id="gantt"></div>
   </div>
 </div>
 
@@ -230,8 +253,11 @@ function endOf(film,show){
 function render(){
   $('#progView').style.display = S.tab==='prog'?'':'none';
   $('#planView').style.display = S.tab==='plan'?'':'none';
+  $('#ganttView').style.display = S.tab==='gantt'?'':'none';
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===S.tab));
-  if(S.tab==='prog') renderProgram(); else renderPlanner();
+  if(S.tab==='prog') renderProgram();
+  else if(S.tab==='gantt') renderGantt();
+  else renderPlanner();
 }
 
 function renderProgram(){
@@ -417,6 +443,59 @@ function renderPlan(){
   $('#plan').innerHTML=html;
 }
 
+// ---------- Zeitplan (Beta): horizontale Zeitachse ----------
+function toggleShow(perf){
+  const idx=S.plan.findIndex(p=>p.show.perf===perf);
+  if(idx>=0){ S.plan.splice(idx,1); S.swapOpen=null; render(); }
+  else pickStart(perf); // hängt an, wenn es zeitlich passt (sonst passiert nichts)
+}
+function renderGantt(){
+  const shows=showsForDay();
+  if(!shows.length){ $('#gantt').innerHTML='<div class="empty">Keine Vorstellungen an diesem Tag.</div>'; return; }
+  const UNKNOWN=90, PPM=2.4;
+  const dur = it => (it.film.runtime!=null?it.film.runtime:UNKNOWN)+buffer();
+  const startM = it => toMin(it.show.time);
+  let minT=Math.floor(Math.min(...shows.map(startM))/60)*60;
+  let maxT=Math.ceil(Math.max(...shows.map(it=>startM(it)+dur(it)))/60)*60;
+  const totalW=(maxT-minT)*PPM;
+  const byFilm=new Map();
+  for(const it of shows){ if(!byFilm.has(it.film)) byFilm.set(it.film,[]); byFilm.get(it.film).push(it); }
+  const films=[...byFilm.keys()].sort((a,b)=>Math.min(...byFilm.get(a).map(startM))-Math.min(...byFilm.get(b).map(startM)));
+  const inPlan = perf => S.plan.some(p=>p.show.perf===perf);
+  let ticks='';
+  for(let t=minT;t<=maxT;t+=60) ticks+=`<div class="gtick" style="left:${(t-minT)*PPM}px">${toHM(t)}</div>`;
+  let rows='';
+  for(const f of films){
+    let blocks='';
+    for(const it of byFilm.get(f).sort((a,b)=>startM(a)-startM(b))){
+      const left=(startM(it)-minT)*PPM, w=Math.max(dur(it)*PPM,30);
+      const sel=inPlan(it.show.perf);
+      const conflict=!sel && planConflict(it);
+      const e=endOf(it.film,it.show);
+      blocks+=`<div class="gblock${sel?' sel':''}${conflict?' dim':''}" style="left:${left}px;width:${w}px" title="${esc(f.title)} · ${it.show.time}${e!=null?'–'+toHM(e):''}${it.show.versions.length?' · '+it.show.versions.join(' '):''}" onclick="toggleShow('${it.show.perf}')"><span>${it.show.time}</span></div>`;
+    }
+    rows+=`<div class="grow2">
+      <div class="glabel">${f.poster?`<img src="${imgUrl(f.poster)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`:''}<span>${esc(f.title)}</span></div>
+      <div class="gtrack" style="width:${totalW}px">${blocks}</div>
+    </div>`;
+  }
+  // Fußzeile mit aktuellem Plan
+  let foot='';
+  if(S.plan.length){
+    let fs=null,le=null;
+    S.plan.forEach(p=>{ const st=toMin(p.show.time),e=endOf(p.film,p.show); if(fs==null)fs=st; if(e!=null)le=e; });
+    foot=`<div class="gfoot"><div><b>${S.plan.length}</b> Filme${fs!=null?' · '+toHM(fs)+(le!=null?' – '+toHM(le):''):''}</div>
+      <div style="display:flex;gap:8px">
+        <button class="primary" onclick="openSummary()">🎟 Tickets</button>
+        <button onclick="clearPlan()">Leeren</button>
+      </div></div>`;
+  }
+  $('#gantt').innerHTML=`<div class="gwrap">
+    <div class="grow2 axis"><div class="glabel"></div><div class="gtrack axis" style="width:${totalW}px">${ticks}</div></div>
+    ${rows}
+  </div>${foot}`;
+}
+
 function esc(s){return s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 
 // ---------- Ticket-Übersicht & Teilen ----------
@@ -567,7 +646,7 @@ $('#buffer').oninput=render;
 $('#gap').oninput=render;
 $('#refresh').onclick=()=>load(true);
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{S.tab=b.dataset.tab;render();});
-window.pickStart=pickStart; window.removeAt=removeAt; window.clearPlan=clearPlan; window.autoSuggest=autoSuggest; window.swapAt=swapAt; window.doSwap=doSwap; window.render=render;
+window.pickStart=pickStart; window.removeAt=removeAt; window.clearPlan=clearPlan; window.autoSuggest=autoSuggest; window.swapAt=swapAt; window.doSwap=doSwap; window.toggleShow=toggleShow; window.render=render;
 window.openSummary=openSummary; window.closeSummary=closeSummary; window.sharePlan=sharePlan; window.copyList=copyList; window.copyLink=copyLink;
 $('#modal').onclick=e=>{ if(e.target.id==='modal') closeSummary(); };
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeSummary(); });
