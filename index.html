@@ -191,6 +191,7 @@ const gapMin = () => Number($('#gap').value)||0;
 
 // alle (Film,Show)-Paare für den aktuell gewählten Tag + Versionsfilter
 function showsForDay(){
+  if(!S.data) return [];
   const ver=$('#verSel').value;
   const list=[];
   for(const f of S.data.films){
@@ -358,10 +359,19 @@ function findAnyByPerf(perf){
   for(const f of S.data.films) for(const s of f.shows) if(s.perf===perf) return {film:f,show:s};
   return null;
 }
+// URL-sicheres Base64 (mit Umlaut-Unterstützung)
+function b64urlEnc(str){ return btoa(unescape(encodeURIComponent(str))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+function b64urlDec(s){ s=s.replace(/-/g,'+').replace(/_/g,'/'); return decodeURIComponent(escape(atob(s))); }
+function posterByTitle(t){ if(!S.data) return null; const f=S.data.films.find(f=>f.title===t); return f?f.poster:null; }
+
+// Der Link trägt den kompletten Plan in sich -> unabhängig von späteren Datenänderungen.
 function planShareUrl(){
-  const ids=S.plan.map(p=>p.show.perf).join('.');
+  const payload={ v:1, d:S.day, b:buffer(), s:S.plan.map(p=>[
+    p.show.perf, p.show.oid, p.show.time, p.film.title,
+    p.film.runtime==null?'':p.film.runtime, p.show.versions.join('/'), p.film.runtimeSource||''
+  ])};
   const u=new URL(location.href.split('#')[0]);
-  u.hash='m='+ids+'&b='+buffer();
+  u.hash='p='+b64urlEnc(JSON.stringify(payload));
   return u.toString();
 }
 function planAsText(){
@@ -393,7 +403,8 @@ function openSummary(){
     ${rows}
     <div class="uhint">💳 Auch mit der Ultimate-Karte solltest du pro Vorstellung einen Platz reservieren – jeder Button führt direkt zur Buchung des jeweiligen Films.</div>
     <div class="modal-actions">
-      <button class="primary" onclick="sharePlan()">🔗 Teilen</button>
+      ${navigator.share?'<button class="primary" onclick="sharePlan()">📤 Teilen</button>':''}
+      <button class="${navigator.share?'':'primary'}" onclick="copyLink()">🔗 Link kopieren</button>
       <button onclick="copyList()">📋 Liste kopieren</button>
       <button onclick="closeSummary()">Schließen</button>
     </div>`;
@@ -402,9 +413,11 @@ function openSummary(){
 function closeSummary(){ $('#modal').style.display='none'; }
 async function sharePlan(){
   const url=planShareUrl();
-  if(navigator.share){
-    try{ await navigator.share({title:'Kino-Marathon UCI Ruhr-Park',text:planAsText(),url}); return; }catch(e){ if(e&&e.name==='AbortError') return; }
-  }
+  try{ await navigator.share({title:'Kino-Marathon UCI Ruhr-Park',text:planAsText(),url}); }
+  catch(e){ if(e&&e.name==='AbortError') return; copyLink(); }
+}
+async function copyLink(){
+  const url=planShareUrl();
   try{ await navigator.clipboard.writeText(url); toast('Link kopiert! 📋'); }
   catch{ prompt('Link zum Teilen:', url); }
 }
@@ -418,11 +431,32 @@ function toast(msg){
 }
 function applySharedPlan(){
   const h=new URLSearchParams(location.hash.slice(1));
+  // Neues, selbst-enthaltendes Format (#p=…): unabhängig von Live-Daten
+  const p=h.get('p');
+  if(p){
+    let pl; try{ pl=JSON.parse(b64urlDec(p)); }catch{ return false; }
+    if(!pl||!Array.isArray(pl.s)||!pl.s.length) return false;
+    if(pl.b!=null) $('#buffer').value=pl.b;
+    S.day=pl.d;
+    S.plan=pl.s.map(a=>{
+      const [perf,oid,time,title,rt,vers,rsrc]=a;
+      return {
+        film:{ title, runtime: rt===''?null:Number(rt), runtimeSource: rsrc||null, poster: posterByTitle(title), detailUrl:null },
+        show:{ perf, oid, time, date: pl.d, versions: vers?vers.split('/'):[],
+               bookingUrl:`https://www.uci-kinowelt.de/kino-buchung/performanceId/${perf}/siteId/46/${oid}` }
+      };
+    });
+    if($('#daySel').querySelector(`option[value="${S.day}"]`)) $('#daySel').value=S.day;
+    S.tab='plan'; render(); openSummary();
+    return true;
+  }
+  // Fallback: altes Format (#m=perf.perf&b=…) – schlägt live nach
   const m=h.get('m'); if(!m||!S.data) return false;
   const b=h.get('b'); if(b&&/^\d+$/.test(b)) $('#buffer').value=b;
   const items=m.split('.').map(findAnyByPerf).filter(Boolean);
   if(!items.length) return false;
-  S.day=items[0].show.date; $('#daySel').value=S.day;
+  S.day=items[0].show.date;
+  if($('#daySel').querySelector(`option[value="${S.day}"]`)) $('#daySel').value=S.day;
   S.plan=items; S.tab='plan';
   render(); openSummary();
   return true;
@@ -468,7 +502,7 @@ $('#gap').oninput=render;
 $('#refresh').onclick=()=>load(true);
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{S.tab=b.dataset.tab;render();});
 window.pickStart=pickStart; window.removeAt=removeAt; window.clearPlan=clearPlan; window.autoExtend=autoExtend; window.render=render;
-window.openSummary=openSummary; window.closeSummary=closeSummary; window.sharePlan=sharePlan; window.copyList=copyList;
+window.openSummary=openSummary; window.closeSummary=closeSummary; window.sharePlan=sharePlan; window.copyList=copyList; window.copyLink=copyLink;
 $('#modal').onclick=e=>{ if(e.target.id==='modal') closeSummary(); };
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeSummary(); });
 
