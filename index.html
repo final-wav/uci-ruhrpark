@@ -24,6 +24,13 @@
     background-attachment:fixed;
   }
   ::selection{background:rgba(245,166,35,.28)}
+  /* Scrollbalken ans dunkle Design anpassen */
+  *{scrollbar-width:thin;scrollbar-color:var(--surface-3) transparent}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:var(--surface-3);border-radius:8px;border:2px solid transparent;background-clip:padding-box}
+  ::-webkit-scrollbar-thumb:hover{background:#3f3f47;background-clip:padding-box}
+  ::-webkit-scrollbar-corner{background:transparent}
   header{
     position:sticky;top:0;z-index:20;padding:20px 28px;
     background:rgba(10,10,11,.72);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
@@ -138,7 +145,7 @@
 </head>
 <body>
 <header>
-  <h1><span class="brand">UCI</span> Ruhr-Park <span class="city">Bochum</span> <span class="ver">Build 12</span></h1>
+  <h1><span class="brand">UCI</span> Ruhr-Park <span class="city">Bochum</span> <span class="ver">Build 13</span></h1>
   <div class="sub" id="sub">lädt…</div>
 </header>
 <div class="wrap">
