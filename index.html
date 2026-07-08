@@ -145,7 +145,7 @@
 </head>
 <body>
 <header>
-  <h1><span class="brand">UCI</span> Ruhr-Park <span class="city">Bochum</span> <span class="ver">Build 13</span></h1>
+  <h1><span class="brand">UCI</span> Ruhr-Park <span class="city">Bochum</span> <span class="ver">Build 14</span></h1>
   <div class="sub" id="sub">lädt…</div>
 </header>
 <div class="wrap">
@@ -180,7 +180,7 @@
   <div id="progView"></div>
 
   <div id="planView" style="display:none">
-    <div class="hint">Wähle links einen <b>Startfilm</b>. Die Liste zeigt danach nur noch Filme, die zeitlich passen (sie wird kürzer) – tippe sie an, um sie anzuhängen. Oder lass dir mit <b>⚡ Auto-Vorschlag</b> eine komplette Kette vorschlagen. Jeden Film kannst du mit <b>⇄</b> tauschen oder mit ✕ entfernen.</div>
+    <div class="hint">Wähle links einen Film – z. B. genau den, den du um 20 Uhr sehen willst. Die Liste zeigt dann alle Filme, die zeitlich passen: <b>davor wie danach</b> (tippe sie an, um sie einzuplanen – der Plan sortiert sich automatisch nach Uhrzeit). Oder lass dir mit <b>⚡ Auto-Vorschlag</b> eine komplette Kette in beide Richtungen bauen. Jeden Film kannst du mit <b>⇄</b> tauschen oder mit ✕ entfernen.</div>
     <div class="planner">
       <div class="col">
         <h2 id="tlHead">Startfilm wählen</h2>
@@ -283,7 +283,7 @@ function showChip(film,s){
 function renderPlanner(){
   // Nur Filme zeigen, die (noch) hinzugefügt werden können -> die Liste wird kürzer
   const list=showsForDay().filter(it=>!planConflict(it));
-  $('#tlHead').textContent = S.plan.length ? 'Das schaffst du noch' : 'Startfilm wählen';
+  $('#tlHead').textContent = S.plan.length ? 'Passt davor & danach' : 'Film wählen';
   let tl='';
   if(list.length===0) tl=`<div class="empty">${S.plan.length?'Kein weiterer Film passt mehr rein.':'Keine Vorstellungen.'}</div>`;
   for(const it of list){
@@ -304,14 +304,24 @@ function keyOf(it){ return it.show.perf; }
 function findByPerf(perf){ return showsForDay().find(it=>it.show.perf===perf); }
 
 function planConflict(it){
-  // true, wenn dieser Show nicht (mehr) in den bestehenden Plan passt
+  // true, wenn dieser Show nicht (mehr) in eine freie Lücke des Plans passt
+  // (davor, dazwischen oder danach – der Planer arbeitet in beide Richtungen)
   if(S.plan.some(p=>p.show.perf===it.show.perf)) return true;
   if(S.plan.some(p=>p.film===it.film)) return true; // selben Film nicht doppelt
   if(S.plan.length===0) return false;
-  const last=S.plan[S.plan.length-1];
-  const le=endOf(last.film,last.show);
-  if(le==null) return false; // unbekannt -> nicht blockieren
-  return toMin(it.show.time) < le + gapMin();
+  const st=toMin(it.show.time), e=endOf(it.film,it.show);
+  // zeitliche Nachbarn im bestehenden Plan finden
+  const before=S.plan.filter(p=>toMin(p.show.time)<=st).sort((a,b)=>toMin(b.show.time)-toMin(a.show.time))[0];
+  const after =S.plan.filter(p=>toMin(p.show.time)>st ).sort((a,b)=>toMin(a.show.time)-toMin(b.show.time))[0];
+  if(before){
+    const be=endOf(before.film,before.show);
+    if(be!=null && st < be+gapMin()) return true; // überlappt den Film davor
+  }
+  if(after){
+    if(e==null) return true; // Länge unbekannt & es kommt noch ein Film -> unsicher
+    if(toMin(after.show.time) < e+gapMin()) return true; // überlappt den Film danach
+  }
+  return false;
 }
 
 function planItem(it,suggested){ return {film:it.film, show:it.show, suggested:!!suggested}; }
@@ -320,14 +330,19 @@ function planItem(it,suggested){ return {film:it.film, show:it.show, suggested:!
 function pickStart(perf){
   const it=findByPerf(perf); if(!it) return;
   if(S.plan.length===0){ S.plan=[planItem(it,false)]; }
-  else { if(planConflict(it)) return; S.plan.push(planItem(it,false)); }
+  else {
+    if(planConflict(it)) return;
+    S.plan.push(planItem(it,false));
+    S.plan.sort((a,b)=>toMin(a.show.time)-toMin(b.show.time)); // Plan bleibt chronologisch
+  }
   S.swapOpen=null; render();
 }
-// Optionaler Auto-Vorschlag: hängt greedy passende Folgefilme an, als "Vorschlag" markiert.
+// Optionaler Auto-Vorschlag: füllt greedy passende Filme davor UND danach, als "Vorschlag" markiert.
 function autoExtend(){
   const all=showsForDay();
   let guard=0;
-  while(guard++<20){
+  // vorwärts: hinter den letzten Film hängen
+  while(guard++<40){
     const last=S.plan[S.plan.length-1];
     const le=endOf(last.film,last.show);
     if(le==null) break;
@@ -338,6 +353,17 @@ function autoExtend(){
     if(!next) break;
     S.plan.push(planItem(next,true));
   }
+  // rückwärts: vor den ersten Film setzen (spätester Film, der noch davor passt)
+  while(guard++<80){
+    const first=S.plan[0];
+    const fs=toMin(first.show.time);
+    const usedFilms=new Set(S.plan.map(p=>p.film));
+    const prev=all
+      .filter(it=>{ const e=endOf(it.film,it.show); return !usedFilms.has(it.film) && e!=null && e+gapMin()<=fs; })
+      .sort((a,b)=>toMin(b.show.time)-toMin(a.show.time))[0];
+    if(!prev) break;
+    S.plan.unshift(planItem(prev,true));
+  }
 }
 function autoSuggest(){
   const before=S.plan.length;
@@ -346,16 +372,19 @@ function autoSuggest(){
   toast(n>0 ? `⚡ ${n} Film${n>1?'e':''} vorgeschlagen – jeder mit ⇄ tauschbar` : 'Kein weiterer Film passt mehr rein');
 }
 
-// Alternativen für Slot i (passt nach dem vorherigen Film; anderer Film als der aktuelle).
+// Alternativen für Slot i (passt zwischen vorigen und nächsten Film; anderer Film als der aktuelle).
 function slotCandidates(i){
-  const prevEnd = i>0 ? endOf(S.plan[i-1].film,S.plan[i-1].show) : null;
+  const prevEnd   = i>0 ? endOf(S.plan[i-1].film,S.plan[i-1].show) : null;
+  const nextStart = i<S.plan.length-1 ? toMin(S.plan[i+1].show.time) : null;
   const usedOther=new Set(S.plan.filter((_,j)=>j!==i).map(p=>p.film));
   const curFilm=S.plan[i].film;
   return showsForDay().filter(it=>{
     if(it.film===curFilm) return false;       // denselben Film nicht als Tausch anbieten
     if(usedOther.has(it.film)) return false;
-    if(endOf(it.film,it.show)==null) return false;
-    if(prevEnd!=null && toMin(it.show.time) < prevEnd+gapMin()) return false;
+    const e=endOf(it.film,it.show);
+    if(e==null) return false;
+    if(prevEnd!=null && toMin(it.show.time) < prevEnd+gapMin()) return false; // muss nach dem vorigen starten
+    if(nextStart!=null && nextStart < e+gapMin()) return false;               // muss vor dem nächsten enden
     return true;
   }).sort((a,b)=>toMin(a.show.time)-toMin(b.show.time));
 }
@@ -383,7 +412,7 @@ function candRow(it,onclick,add){
   </div>`;
 }
 function renderPlan(){
-  if(S.plan.length===0){ $('#plan').innerHTML='<div class="empty">Noch kein Film gewählt.<br>Klicke links auf einen Startfilm.</div>'; return; }
+  if(S.plan.length===0){ $('#plan').innerHTML='<div class="empty">Noch kein Film gewählt.<br>Klicke links auf einen Film – auch dein Wunschfilm mittendrin geht, Passendes davor &amp; danach kommt dann dazu.</div>'; return; }
   let html=''; let prevEnd=null; let firstStart=null; let lastEnd=null; let totalRun=0;
   S.plan.forEach((p,i)=>{
     const st=toMin(p.show.time), e=endOf(p.film,p.show);
