@@ -219,11 +219,15 @@ export default {
       return withCors(resp);
     }
 
-    // Programm – mit Edge-Cache (10 Min) + Stale-Fallback (12 h), falls UCI blockt
+    // Programm – Edge-Cache (10 Min, pro Standort) + Stale-Fallback (12 h, pro Standort)
+    // + optionaler globaler KV-Fallback (48 h, über ALLE Standorte), falls UCI blockt.
+    // KV ist optional: ohne Bindung "env.PROGRAM_KV" verhält sich alles wie bisher.
     if (path === '/program' || path === '/') {
       const cache = caches.default;
       const freshKey = new Request('https://uci.cache/program-fresh');
       const staleKey = new Request('https://uci.cache/program-stale');
+      const KV = env && env.PROGRAM_KV; // an Standort-übergreifenden Speicher gebunden?
+      const KV_KEY = 'program-latest';
       const bypass = url.search.length > 1; // ?_=… von "↻ Aktualisieren" -> frisch holen
       if (!bypass) {
         const hit = await cache.match(freshKey);
@@ -234,10 +238,18 @@ export default {
         const store = ttl => new Response(json, { headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'max-age=' + ttl } });
         ctx.waitUntil(cache.put(freshKey, store(600)));
         ctx.waitUntil(cache.put(staleKey, store(43200)));
+        if (KV) ctx.waitUntil(KV.put(KV_KEY, json, { expirationTtl: 172800 })); // 48 h global
         return new Response(json, { headers: { ...cors(), 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, max-age=300' } });
       } catch (err) {
+        // 1. lokaler Stale-Cache dieses Standorts
         const stale = await cache.match(staleKey);
-        if (stale) return withCors(stale, { 'Cache-Control': 'no-store', 'X-UCI-Stale': '1' });
+        if (stale) return withCors(stale, { 'Cache-Control': 'no-store', 'X-UCI-Stale': 'edge' });
+        // 2. globaler KV-Stand (rettet "kalte" Standorte, an denen UCI gerade blockt)
+        if (KV) {
+          const kv = await KV.get(KV_KEY);
+          if (kv) return new Response(kv, { headers: { ...cors(), 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-UCI-Stale': 'kv' } });
+        }
+        // 3. nichts vorhanden -> Fehler durchreichen
         return new Response(JSON.stringify({ error: String(err && err.message || err) }), {
           status: 502, headers: { ...cors(), 'Content-Type': 'application/json' },
         });

@@ -4,3 +4,12 @@ compatibility_date = "2024-09-01"
 
 # Nach dem Deploy erreichbar unter:
 #   https://uci-proxy.<dein-subdomain>.workers.dev
+
+# Optional: globaler Fallback-Speicher (KV). Damit liefert der Worker an JEDEM
+# Cloudflare-Standort die letzte gute Version aus, wenn UCI mit 403 blockt.
+# Einrichten:
+#   wrangler kv namespace create PROGRAM_KV
+# und die ausgegebene id hier eintragen, dann die zwei Zeilen einkommentieren:
+# [[kv_namespaces]]
+# binding = "PROGRAM_KV"
+# id = "<hier-die-namespace-id-einsetzen>"

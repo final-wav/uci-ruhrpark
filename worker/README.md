@@ -34,3 +34,32 @@ committen & pushen – fertig.
 https://uci-proxy.deinname.workers.dev/program
 ```
 Sollte JSON mit `films[]` liefern – mit `Access-Control-Allow-Origin: *`.
+
+## Optional: globaler 403-Fallback (KV) – empfohlen
+
+UCI blockt zeitweise die Cloudflare-IPs mit **403**. Der Worker cacht den
+letzten guten Stand zwar, aber nur **pro Cloudflare-Standort**. Ein Nutzer,
+dessen Netz über einen „kalten" Standort rausgeht, sieht im Blockmoment
+trotzdem den Fehler. Mit einem **KV-Speicher** liegt der letzte gute Stand
+**global** – dann liefert *jeder* Standort im Blockfall die letzte Version aus.
+
+Der Code nutzt KV automatisch, sobald die Bindung `PROGRAM_KV` existiert –
+ohne Bindung bleibt alles wie bisher.
+
+### Variante A — Dashboard
+1. **Workers & Pages → KV → Create namespace**, Name z.B. `uci-program`.
+2. Beim Worker `uci-proxy`: **Settings → Variables and Secrets → KV Namespace
+   Bindings → Add binding**.
+3. **Variable name:** `PROGRAM_KV`, **KV namespace:** den eben erstellten wählen → **Deploy**.
+
+### Variante B — Wrangler CLI
+```bash
+cd worker
+wrangler kv namespace create PROGRAM_KV
+```
+Die ausgegebene `id` in [`wrangler.toml`](wrangler.toml) eintragen, den
+`[[kv_namespaces]]`-Block einkommentieren, dann `wrangler deploy`.
+
+### Prüfen
+Wenn UCI blockt und KV greift, trägt die Antwort den Header `X-UCI-Stale: kv`
+(lokaler Standort-Cache: `X-UCI-Stale: edge`).
