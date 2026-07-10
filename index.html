@@ -116,7 +116,9 @@
   .empty{color:var(--dim);font-size:14px;text-align:center;padding:26px 14px;line-height:1.6}
   .total{margin-top:14px;padding-top:14px;border-top:1px solid var(--hair);font-size:14px}
   .total b{color:var(--accent)}
-  .err{background:rgba(255,91,82,.1);border:1px solid rgba(255,91,82,.3);color:#ffb0ab;padding:12px 16px;border-radius:10px;margin-bottom:16px;font-size:14px}
+  .err{background:rgba(255,91,82,.1);border:1px solid rgba(255,91,82,.3);color:#ffb0ab;padding:12px 16px;border-radius:10px;margin-bottom:16px;font-size:14px;line-height:1.5}
+  .err.warn{background:rgba(245,166,35,.12);border-color:rgba(245,166,35,.4);color:#f5c274}
+  .err code{background:rgba(255,255,255,.08);padding:1px 5px;border-radius:4px}
   .hint{font-size:14px;color:var(--dim);margin-bottom:16px;line-height:1.55}
   a.src{color:var(--dim);text-decoration:underline;text-underline-offset:2px}
   a.src:hover{color:var(--accent)}
@@ -145,7 +147,7 @@
 </head>
 <body>
 <header>
-  <h1><span class="brand">UCI</span> Ruhr-Park <span class="city">Bochum</span> <span class="ver">Build 14</span></h1>
+  <h1><span class="brand">UCI</span> Ruhr-Park <span class="city">Bochum</span> <span class="ver">Build 15</span></h1>
   <div class="sub" id="sub">lädt…</div>
 </header>
 <div class="wrap">
@@ -577,8 +579,20 @@ function buildDayOptions(){
   vs.innerHTML='<option value="">alle</option>'+[...vers].sort().map(v=>`<option>${v}</option>`).join('');
 }
 
+const CACHE_KEY='uci_program_cache_v1';
+function readCache(){
+  try{ const o=JSON.parse(localStorage.getItem(CACHE_KEY)); return (o&&o.data&&o.data.films)?o:null; }catch{ return null; }
+}
+// Ordnet den Fehler ein: Netz/Firewall vs. UCI-seitiges 403.
+function failHint(e){
+  const blocked = (e && e.name==='AbortError') || /Failed to fetch|NetworkError|load failed/i.test(String(e&&e.message||e));
+  return blocked
+    ? 'Der Server war nicht erreichbar. <b>Manche Firmen- oder Gäste-Netze blockieren die Adresse <code>*.workers.dev</code></b> pauschal – über Mobilfunk oder ein anderes WLAN klappt es dann meist.'
+    : 'UCI hat den Abruf gerade abgelehnt (zeitweiliges 403). Später einfach neu laden.';
+}
+
 async function load(refresh){
-  $('#err').style.display='none';
+  $('#err').style.display='none'; $('#err').className='err';
   if(!LOCAL && !BASE){
     $('#err').style.display='';
     $('#err').innerHTML='Keine Worker-URL gesetzt. Trage sie in <b>config.js</b> ein (<code>window.UCI_WORKER_BASE</code>) – siehe README.';
@@ -586,15 +600,33 @@ async function load(refresh){
     return;
   }
   try{
-    const r=await fetch(BASE+'/program'+(refresh?'?_='+Date.now():''));
+    const ctrl=new AbortController();
+    const timer=setTimeout(()=>ctrl.abort(), 12000); // hängende/blockierte Verbindung nicht ewig warten
+    let r;
+    try{ r=await fetch(BASE+'/program'+(refresh?'?_='+Date.now():''), {signal:ctrl.signal}); }
+    finally{ clearTimeout(timer); }
     const d=await r.json();
     if(d.error) throw new Error(d.error);
     S.data=d;
+    try{ localStorage.setItem(CACHE_KEY, JSON.stringify({data:d, savedAt:Date.now()})); }catch{}
     buildDayOptions();
     $('#sub').innerHTML=`${d.filmCount} Filme · ${d.showCount} Vorstellungen · Stand ${new Date(d.fetchedAt).toLocaleString('de-DE')} · <a class="src" href="${d.source}" target="_blank">Quelle ↗</a>`;
     if(!applySharedPlan()) render();
   }catch(e){
-    $('#err').style.display=''; $('#err').textContent='Fehler beim Laden: '+e.message;
+    // Live-Abruf fehlgeschlagen -> letzten lokal gespeicherten Stand zeigen, falls vorhanden
+    const cached=readCache();
+    if(cached){
+      S.data=cached.data;
+      buildDayOptions();
+      const when=new Date(cached.data.fetchedAt||cached.savedAt).toLocaleString('de-DE');
+      $('#sub').innerHTML=`${cached.data.filmCount} Filme · ${cached.data.showCount} Vorstellungen · <b>gespeicherter Stand</b> ${when}`;
+      $('#err').style.display=''; $('#err').className='err warn';
+      $('#err').innerHTML='Konnte nicht aktualisieren – zeige den zuletzt geladenen Spielplan. '+failHint(e);
+      if(!applySharedPlan()) render();
+    } else {
+      $('#err').style.display=''; $('#err').className='err';
+      $('#err').innerHTML='Fehler beim Laden: '+esc(String(e&&e.message||e))+'<br>'+failHint(e);
+    }
   }
 }
 
