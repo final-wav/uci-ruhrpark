@@ -192,16 +192,28 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/+$/, '') || '/';
 
-    // Poster-Proxy – Retry + nur erfolgreiche Bilder cachen (kein 403-Caching)
+    // Poster-Proxy – Edge-Cache pro Standort + globaler KV-Cache (Poster sind statisch),
+    // damit Bilder auch dann laden, wenn UCI den lokalen Standort mit 403 blockt.
     if (path === '/img') {
       const u = url.searchParams.get('u') || '';
       if (!/^https:\/\/www\.uci-kinowelt\.de\/[^"'<>\s]+\.(jpg|jpeg|png|webp)$/i.test(u)) {
         return new Response('bad url', { status: 400, headers: cors() });
       }
       const cache = caches.default;
+      const KV = env && env.PROGRAM_KV;
+      const imgKV = 'img:' + u;
       const key = new Request('https://uci.cache/img?u=' + encodeURIComponent(u));
       const hit = await cache.match(key);
       if (hit) return withCors(hit);
+      // globaler KV-Treffer (Poster ändern sich praktisch nie) -> an JEDEM Standort verfügbar
+      if (KV) {
+        const kv = await KV.getWithMetadata(imgKV, { type: 'arrayBuffer' });
+        if (kv && kv.value) {
+          const resp = new Response(kv.value, { status: 200, headers: { 'Content-Type': (kv.metadata && kv.metadata.ct) || 'image/jpeg', 'Cache-Control': 'public, max-age=86400' } });
+          ctx.waitUntil(cache.put(key, resp.clone()));
+          return withCors(resp);
+        }
+      }
       const imgHeaders = { 'User-Agent': UA, Referer: BASE + '/', Accept: 'image/avif,image/webp,image/*,*/*;q=0.8' };
       let ir, last = 0;
       for (let i = 0; i < 3; i++) {
@@ -211,11 +223,14 @@ export default {
         await new Promise(r => setTimeout(r, 250 * (i + 1)));
       }
       if (!ir.ok) return new Response(null, { status: last || 502, headers: cors() });
-      const resp = new Response(ir.body, {
+      const ct = ir.headers.get('content-type') || 'image/jpeg';
+      const buf = await ir.arrayBuffer();
+      const resp = new Response(buf, {
         status: 200,
-        headers: { 'Content-Type': ir.headers.get('content-type') || 'image/jpeg', 'Cache-Control': 'public, max-age=86400' },
+        headers: { 'Content-Type': ct, 'Cache-Control': 'public, max-age=86400' },
       });
       ctx.waitUntil(cache.put(key, resp.clone()));
+      if (KV) ctx.waitUntil(KV.put(imgKV, buf, { expirationTtl: 2592000, metadata: { ct } })); // 30 Tage global
       return withCors(resp);
     }
 
